@@ -1,0 +1,30 @@
+{
+  "name": "吟游手册 — AI 角色卡创作工具",
+  "short_name": "吟游手册",
+  "description": "创建、管理和测试 SillyTavern AI 角色卡。分步向导构建卡片，AI 辅助生成内容。",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#0f172a",
+  "background_color": "#0f172a",
+  "lang": "zh-CN",
+  "categories": ["utilities", "entertainment"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
