@@ -167,8 +167,9 @@ export function useAIGenerate() {
     characterDescriptions: string,
     sceneHint: string,
     targetWordCount?: number,
+    worldbookContext?: string,
   ): Promise<string> => {
-    const prompts = FIRST_MESSAGE_PROMPT(cardName, characterDescriptions, sceneHint, targetWordCount);
+    const prompts = FIRST_MESSAGE_PROMPT(cardName, characterDescriptions, sceneHint, targetWordCount, worldbookContext);
     const maxTokens = targetWordCount ? Math.max(4000, targetWordCount * 3) : 4000;
     return callAIWithPrompt(prompts.system, prompts.user, { temperature: 0.9, max_tokens: maxTokens });
   }, []);
@@ -180,15 +181,16 @@ export function useAIGenerate() {
     sceneHint: string,
     onChunk: StreamCallback,
     targetWordCount?: number,
+    worldbookContext?: string,
   ): Promise<string> => {
-    const prompts = FIRST_MESSAGE_PROMPT(cardName, characterDescriptions, sceneHint, targetWordCount);
+    const prompts = FIRST_MESSAGE_PROMPT(cardName, characterDescriptions, sceneHint, targetWordCount, worldbookContext);
     const maxTokens = targetWordCount ? Math.max(4000, targetWordCount * 3) : 4000;
     return callAIWithPromptStreaming(prompts.system, prompts.user, onChunk, { temperature: 0.9, max_tokens: maxTokens });
   }, []);
 
   /** Generate example dialogues */
-  const generateExampleDialogues = useCallback(async (cardName: string, characterDescriptions: string): Promise<string> => {
-    const prompts = EXAMPLE_DIALOGUES_PROMPT(cardName, characterDescriptions);
+  const generateExampleDialogues = useCallback(async (cardName: string, characterDescriptions: string, worldbookContext?: string): Promise<string> => {
+    const prompts = EXAMPLE_DIALOGUES_PROMPT(cardName, characterDescriptions, worldbookContext);
     return callAIWithPrompt(prompts.system, prompts.user, { temperature: 0.85, max_tokens: 6000 });
   }, []);
 
@@ -197,8 +199,9 @@ export function useAIGenerate() {
     cardName: string,
     characterDescriptions: string,
     onChunk: StreamCallback,
+    worldbookContext?: string,
   ): Promise<string> => {
-    const prompts = EXAMPLE_DIALOGUES_PROMPT(cardName, characterDescriptions);
+    const prompts = EXAMPLE_DIALOGUES_PROMPT(cardName, characterDescriptions, worldbookContext);
     return callAIWithPromptStreaming(prompts.system, prompts.user, onChunk, { temperature: 0.85, max_tokens: 6000 });
   }, []);
 

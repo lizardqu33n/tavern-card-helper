@@ -4,7 +4,9 @@ import { FileText, Download, Sparkles, BookMarked } from 'lucide-react';
 import { Button } from '../components/shared/Button';
 import { TextArea } from '../components/shared/TextArea';
 import {
+  DEFAULT_NOVEL_OUTPUT_MAX_TOKENS,
   analyzeNovelText,
+  analyzeNovelTextStreaming,
   exportAnalysisAsJson,
   saveAnalysisLorebookImport,
   splitNovelText,
@@ -31,6 +33,20 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
+type TokenMode = 'standard' | 'large' | 'extreme' | 'custom';
+
+const TOKEN_MODE_OPTIONS: Array<{ value: TokenMode; label: string; tokens: number; description: string }> = [
+  { value: 'standard', label: '标准', tokens: DEFAULT_NOVEL_OUTPUT_MAX_TOKENS, description: '适合普通章节抽样' },
+  { value: 'large', label: '大型', tokens: 32000, description: '更充分拆分人物和设定' },
+  { value: 'extreme', label: '极限', tokens: 128000, description: '适合长篇、多人物、多设定' },
+  { value: 'custom', label: '自定义', tokens: DEFAULT_NOVEL_OUTPUT_MAX_TOKENS, description: '按模型能力手动填写' },
+];
+
+function getTokenModeValue(mode: TokenMode, customTokens: number): number {
+  if (mode === 'custom') return customTokens;
+  return TOKEN_MODE_OPTIONS.find((option) => option.value === mode)?.tokens ?? DEFAULT_NOVEL_OUTPUT_MAX_TOKENS;
+}
+
 export function NovelAnalysisPage() {
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -38,10 +54,15 @@ export function NovelAnalysisPage() {
   const [text, setText] = useState('');
   const [chunks, setChunks] = useState<NovelChunk[]>([]);
   const [analysis, setAnalysis] = useState<NovelAnalysisResult | null>(null);
+  const [tokenMode, setTokenMode] = useState<TokenMode>('standard');
+  const [customOutputTokens, setCustomOutputTokens] = useState(DEFAULT_NOVEL_OUTPUT_MAX_TOKENS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [streamingText, setStreamingText] = useState('');
+  const [progressPercent, setProgressPercent] = useState(0);
 
   const totalChars = useMemo(() => text.trim().length, [text]);
+  const outputMaxTokens = useMemo(() => getTokenModeValue(tokenMode, customOutputTokens), [tokenMode, customOutputTokens]);
   const lorebookCategoryCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     analysis?.lorebookEntries.forEach((entry) => {
@@ -61,6 +82,8 @@ export function NovelAnalysisPage() {
 
   const handleAnalyze = async () => {
     setError('');
+    setStreamingText('');
+    setProgressPercent(0);
     const nextChunks = chunks.length > 0 ? chunks : splitNovelText(text);
     setChunks(nextChunks);
     if (nextChunks.length === 0) {
@@ -70,7 +93,20 @@ export function NovelAnalysisPage() {
 
     setLoading(true);
     try {
-      const result = await analyzeNovelText(title, nextChunks);
+      const result = await analyzeNovelTextStreaming(
+        title,
+        nextChunks,
+        outputMaxTokens,
+        (chunk, fullText) => {
+          setStreamingText(fullText);
+          // Estimate progress: roughly based on character count versus expected output
+          const estimatedChars = outputMaxTokens * 2; // rough: ~2 chars per token
+          const pct = Math.min(Math.round((fullText.length / estimatedChars) * 100), 99);
+          setProgressPercent(pct);
+        },
+      );
+      setProgressPercent(100);
+      setStreamingText('');
       setAnalysis(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : '小说分析失败');
@@ -141,6 +177,41 @@ export function NovelAnalysisPage() {
             />
           </div>
 
+          <div className="rounded-lg border border-slate-700/50 bg-slate-950/30 p-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <label className="text-sm font-medium text-slate-300">小说分析输出 Token 模式</label>
+              <span className="text-xs text-emerald-300">当前：{outputMaxTokens.toLocaleString()} tokens</span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-4">
+              {TOKEN_MODE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setTokenMode(option.value)}
+                  className={`rounded-lg border px-3 py-2 text-left transition ${tokenMode === option.value ? 'border-emerald-500 bg-emerald-950/40 text-emerald-100' : 'border-slate-700 bg-slate-900/40 text-slate-300 hover:border-slate-500'}`}
+                >
+                  <div className="text-sm font-semibold">{option.label}</div>
+                  <div className="mt-0.5 text-[11px] text-slate-500">{option.value === 'custom' ? '手动填写' : `${option.tokens.toLocaleString()} tokens`}</div>
+                  <div className="mt-1 text-[10px] text-slate-500">{option.description}</div>
+                </button>
+              ))}
+            </div>
+            {tokenMode === 'custom' && (
+              <div className="mt-3">
+                <input
+                  type="number"
+                  min={4000}
+                  max={300000}
+                  step={1000}
+                  value={customOutputTokens}
+                  onChange={(e) => setCustomOutputTokens(parseInt(e.target.value) || DEFAULT_NOVEL_OUTPUT_MAX_TOKENS)}
+                  className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
+                />
+                <p className="mt-1 text-[11px] text-slate-500">范围 4000 - 200000，最终是否可用取决于当前模型和中转站支持。</p>
+              </div>
+            )}
+          </div>
+
           <TextArea
             label="小说文本"
             value={text}
@@ -156,6 +227,35 @@ export function NovelAnalysisPage() {
           {error && (
             <div className="rounded-lg border border-red-700/50 bg-red-900/20 p-3 text-sm text-red-300">
               {error}
+            </div>
+          )}
+
+          {/* Streaming Progress Bar — "创作者无法介入" */}
+          {loading && (
+            <div className="rounded-xl border border-amber-700/40 bg-amber-950/20 p-4 animate-fade-in">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm font-medium text-amber-300">
+                  <Sparkles size={14} className="inline mr-1" />
+                  AI 正在分析中...
+                </span>
+                <span className="text-xs text-amber-400">{progressPercent}%</span>
+              </div>
+              {/* Progress bar */}
+              <div className="mb-2 h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all duration-300 ease-out"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+              {/* Streaming text preview */}
+              <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-700/50 bg-slate-950/50 p-3">
+                <pre className="whitespace-pre-wrap text-xs text-slate-400 leading-relaxed font-mono">
+                  {streamingText || '等待 AI 响应...'}
+                </pre>
+              </div>
+              <p className="mt-2 text-center text-[11px] text-amber-500/70 italic">
+                ⚠ 创作者无法介入 — AI 正在生成结构化分析，请耐心等待
+              </p>
             </div>
           )}
 
@@ -179,6 +279,7 @@ export function NovelAnalysisPage() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-2">
             <Stat label="文本字数" value={totalChars} />
             <Stat label="切块数量" value={chunks.length} />
+            <Stat label="输出上限" value={outputMaxTokens.toLocaleString()} />
             <Stat label="人物" value={analysis?.characters.length ?? '-'} />
             <Stat label="世界书条目" value={analysis?.lorebookEntries.length ?? '-'} />
             <Stat label="人物关系" value={analysis?.relationshipMap.length ?? '-'} />

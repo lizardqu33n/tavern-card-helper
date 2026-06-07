@@ -22,10 +22,11 @@ interface StepWorldBookProps {
   entries: LorebookEntry[];
   cardName: string;
   characterSummaries: string;
+  existingWorldbookContext: string;
   onUpdate: (entries: LorebookEntry[]) => void;
 }
 
-export function StepWorldBook({ entries, cardName, characterSummaries, onUpdate }: StepWorldBookProps) {
+export function StepWorldBook({ entries, cardName, characterSummaries, existingWorldbookContext, onUpdate }: StepWorldBookProps) {
   const [generating, setGenerating] = useState(false);
   const [topic, setTopic] = useState('');
   const [worldRules, setWorldRules] = useState('');
@@ -63,6 +64,10 @@ export function StepWorldBook({ entries, cardName, characterSummaries, onUpdate 
   const handleBatchGenerate = async () => {
     setGenerating(true);
     setAiError(null);
+    const consistencyRules = [
+      worldRules,
+      existingWorldbookContext ? `已有世界书（必须保持一致，不要冲突；新条目要补充空白、避免重复）：\n${existingWorldbookContext}` : '',
+    ].filter(Boolean).join('\n\n');
     try {
       if (skeletonMode) {
         // ── Skeleton mode: batch generation in groups of 5 ──
@@ -75,7 +80,7 @@ export function StepWorldBook({ entries, cardName, characterSummaries, onUpdate 
           batchIndex++;
           const existingTitles = allSkeletons.map((s) => s.comment).join('、');
           const skeletons = await generateLorebookSkeleton(
-            cardName, characterSummaries, topic, batchSize, existingTitles, worldRules || undefined,
+            cardName, characterSummaries, topic, batchSize, existingTitles, consistencyRules || undefined,
           );
           allSkeletons = [...allSkeletons, ...skeletons];
           remaining -= batchSize;
@@ -101,7 +106,7 @@ export function StepWorldBook({ entries, cardName, characterSummaries, onUpdate 
         addToast('success', `已生成 ${newEntries.length} 条骨架，点击「✨ AI 展开」逐条扩展`);
       } else {
         // ── Full mode: original behavior ──
-        const result = await generateLorebookParsed(cardName, characterSummaries, topic, worldRules || undefined);
+        const result = await generateLorebookParsed(cardName, characterSummaries, topic, consistencyRules || undefined);
         if (Array.isArray(result) && result.length > 0) {
           const newEntries = result.map((item) => {
             const base = createEmptyLorebookEntry();
@@ -163,7 +168,9 @@ export function StepWorldBook({ entries, cardName, characterSummaries, onUpdate 
           strategy: entry.constant ? 'constant' : 'selective',
           position: entry.insertion_order,
         },
-        characterSummaries,
+        existingWorldbookContext
+          ? `${characterSummaries}\n\n已有世界书（必须保持一致）：\n${existingWorldbookContext}`
+          : characterSummaries,
       );
       updateEntry(index, {
         comment: result.comment,
@@ -455,6 +462,30 @@ export function StepWorldBook({ entries, cardName, characterSummaries, onUpdate 
             </div>
           );
         })}
+      </div>
+
+      {/* Fixed bottom action buttons */}
+      <div className="fixed bottom-4 right-4 z-40 flex gap-2">
+        <Button
+          onClick={addEntry}
+          variant="secondary"
+          className="shadow-lg shadow-slate-900/50 hover:scale-105 transition-transform"
+        >
+          <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+          添加条目
+        </Button>
+        <Button
+          onClick={() => setShowAiPanel(true)}
+          disabled={generating}
+          className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 transition-all duration-200 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+        >
+          <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+          </svg>
+          AI 生成
+        </Button>
       </div>
     </div>
   );

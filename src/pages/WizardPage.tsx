@@ -147,6 +147,15 @@ export function WizardPage() {
     .map(e => `${e.name}: ${e.content.slice(0, 80)}`)
     .join('\n');
 
+  const worldbookContext = draft.lorebookEntries
+    .filter(e => e.enabled !== false && (e.name || e.content))
+    .map((e, index) => `[${index + 1}] ${e.name || e.comment || '未命名条目'}
+触发词: ${(e.keys || []).join('、') || '(无)'}
+类型: ${e.constant ? '常驻' : '触发'} · 位置: ${e.position} · 优先级: ${e.priority}
+内容:
+${e.content}`)
+    .join('\n\n---\n\n');
+
   /** Sync character data to world book entries and update draft */
   const getDraftWithCharacterEntries = useCallback(() => {
     const { entries, characters } = syncCharacterEntries(draft.characters, draft.lorebookEntries);
@@ -296,6 +305,7 @@ export function WizardPage() {
             entries={draft.lorebookEntries}
             cardName={draft.cardName}
             characterSummaries={characterSummaries}
+            existingWorldbookContext={worldbookContext}
             onUpdate={(entries) => updateDraft({ lorebookEntries: entries })}
           />
         );
@@ -305,6 +315,7 @@ export function WizardPage() {
             firstMessage={draft.firstMessage}
             cardName={draft.cardName}
             characterDescriptions={characterDescriptions}
+            worldbookContext={worldbookContext}
             onChange={(msg) => updateDraft({ firstMessage: msg })}
           />
         );
@@ -314,6 +325,7 @@ export function WizardPage() {
             exampleDialogues={draft.exampleDialogues}
             cardName={draft.cardName}
             characterDescriptions={characterDescriptions}
+            existingWorldbookContext={worldbookContext}
             onChange={(d) => updateDraft({ exampleDialogues: d })}
           />
         );

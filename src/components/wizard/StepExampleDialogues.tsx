@@ -13,10 +13,11 @@ interface StepExampleDialoguesProps {
   exampleDialogues: string;
   cardName: string;
   characterDescriptions: string;
+  existingWorldbookContext?: string;
   onChange: (dialogues: string) => void;
 }
 
-export function StepExampleDialogues({ exampleDialogues, cardName, characterDescriptions, onChange }: StepExampleDialoguesProps) {
+export function StepExampleDialogues({ exampleDialogues, cardName, characterDescriptions, existingWorldbookContext, onChange }: StepExampleDialoguesProps) {
   const { generateExampleDialoguesStreaming } = useAIGenerate();
   const [aiStatus, setAiStatus] = useState<AIProgressStatus>('idle');
   const [aiText, setAiText] = useState('');
@@ -36,6 +37,7 @@ export function StepExampleDialogues({ exampleDialogues, cardName, characterDesc
         (chunk) => {
           setAiText((prev) => prev + chunk);
         },
+        existingWorldbookContext,
       );
       setAiStatus('done');
       setPendingResult(fullText);
@@ -43,7 +45,7 @@ export function StepExampleDialogues({ exampleDialogues, cardName, characterDesc
       setAiStatus('error');
       setAiError(err instanceof Error ? err.message : '生成失败');
     }
-  }, [cardName, characterDescriptions, generateExampleDialoguesStreaming]);
+  }, [cardName, characterDescriptions, existingWorldbookContext, generateExampleDialoguesStreaming]);
 
   const handleAccept = useCallback(() => {
     if (pendingResult) {
