@@ -28,6 +28,9 @@ export function useCardLibrary() {
     try {
       const all = await db.cards.orderBy('updatedAt').reverse().toArray();
       setCards(all as CardRecord[]);
+    } catch (err) {
+      console.error('Failed to load cards:', err);
+      setCards([]);
     } finally {
       setLoading(false);
     }

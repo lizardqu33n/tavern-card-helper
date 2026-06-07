@@ -30,6 +30,8 @@ export function SettingsPage() {
     getAISettings().then((s) => {
       setSettings(s);
       setTempKey(s.apiKey);
+    }).catch((err) => {
+      console.error('Failed to load AI settings:', err);
     });
   }, []);
 
@@ -266,6 +268,7 @@ export function SettingsPage() {
               model: settings.model,
               temperature: settings.temperature,
               maxTokens: settings.maxTokens,
+              ...(editingKey ? { apiKey: tempKey } : {}),
             })}
           >
             💾 保存设置

@@ -67,6 +67,9 @@ export function DialogueCreator() {
             setMessages(chat.messages);
           }
           setRestored(true);
+        }).catch((err) => {
+          console.error('Failed to restore chat:', err);
+          setRestored(true);
         });
         return;
       }

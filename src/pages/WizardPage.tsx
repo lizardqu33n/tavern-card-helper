@@ -83,7 +83,8 @@ function syncCharacterEntries(
 export function WizardPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const editId = id ? parseInt(id) : undefined;
+  const parsedId = id ? parseInt(id) : undefined;
+  const editId = parsedId !== undefined && !isNaN(parsedId) ? parsedId : undefined;
 
   const {
     currentStep,

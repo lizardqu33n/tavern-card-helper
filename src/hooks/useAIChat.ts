@@ -52,27 +52,32 @@ export function useAIChat(card: CardForChat | null) {
     }
 
     (async () => {
-      // Try to find existing session for this card
-      const existing = await db.chat_sessions
-        .where('cardId')
-        .equals(card.id!)
-        .last();
+      try {
+        // Try to find existing session for this card
+        const existing = await db.chat_sessions
+          .where('cardId')
+          .equals(card.id!)
+          .last();
 
-      if (existing) {
-        setSessionId(existing.id ?? null);
-        setMessages(existing.messages || []);
-      } else {
-        // Create new session with first message pre-loaded
-        const initialMessages: ChatMessage[] = [];
-        if (card.data.first_mes) {
-          initialMessages.push({
-            role: 'assistant',
-            content: card.data.first_mes,
-            timestamp: Date.now(),
-          });
+        if (existing) {
+          setSessionId(existing.id ?? null);
+          setMessages(existing.messages || []);
+        } else {
+          // Create new session with first message pre-loaded
+          const initialMessages: ChatMessage[] = [];
+          if (card.data.first_mes) {
+            initialMessages.push({
+              role: 'assistant',
+              content: card.data.first_mes,
+              timestamp: Date.now(),
+            });
+          }
+          setMessages(initialMessages);
+          setSessionId(null);
         }
-        setMessages(initialMessages);
-        setSessionId(null);
+      } catch (err) {
+        console.error('Failed to load chat session:', err);
+        setError('加载对话记录失败');
       }
     })();
   }, [card]);

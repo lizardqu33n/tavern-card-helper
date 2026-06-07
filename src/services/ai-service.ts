@@ -79,22 +79,6 @@ function injectPreset(messages: AIMessage[]): AIMessage[] {
 }
 
 /**
- * Build the request body for AI API calls.
- */
-function buildRequestBody(options: AIRequestOptions, useStream: boolean = false) {
-  const settings = getAISettings();
-  return settings.then((s) => ({
-    apiUrl: normalizeApiUrl(s.apiUrl),
-    apiKey: s.apiKey,
-    model: s.model,
-    messages: options.messages,
-    temperature: options.temperature ?? s.temperature,
-    max_tokens: options.max_tokens ?? s.maxTokens,
-    stream: useStream,
-  }));
-}
-
-/**
  * Call the AI API through the Express proxy (non-streaming).
  * Credentials are read from IndexedDB and forwarded to the backend proxy.
  */

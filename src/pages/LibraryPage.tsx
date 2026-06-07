@@ -116,13 +116,15 @@ export function LibraryPage() {
           cardData = JSON.parse(text);
         }
 
+        // Strip id to avoid overwriting existing cards in DB
+        const { id: _discardId, ...cardWithoutId } = cardData;
         const card = {
-          ...cardData,
+          ...cardWithoutId,
           name: (cardData.data as Record<string, unknown>)?.name || cardData.name || 'Imported Card',
           createdAt: new Date(),
           updatedAt: new Date(),
         };
-        await db.cards.put(card);
+        await db.cards.add(card as Record<string, unknown>);
         await loadCards();
         addToast('success', `卡片「${card.name}」导入成功`);
       } catch (err: unknown) {
