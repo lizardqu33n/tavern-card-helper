@@ -1,5 +1,9 @@
 import { callAIWithPrompt } from './ai-service';
 import { parseAIJson } from '../constants/prompts';
+import { createEmptyLorebookEntry } from '../constants/defaults';
+import type { LorebookEntry } from '../constants/defaults';
+
+export const NOVEL_LOREBOOK_IMPORT_KEY = 'novel-analysis-lorebook-import';
 
 export interface NovelChunk {
   id: number;
@@ -183,4 +187,62 @@ export function exportAnalysisAsJson(title: string, chunks: NovelChunk[], analys
     totalChars: chunks.reduce((sum, chunk) => sum + chunk.content.length, 0),
     analysis,
   }, null, 2);
+}
+
+export function analysisToLorebookEntries(analysis: NovelAnalysisResult): LorebookEntry[] {
+  return analysis.lorebookEntries.map((entry, index) => {
+    const lore = createEmptyLorebookEntry();
+    lore.name = entry.name || `小说素材 ${index + 1}`;
+    lore.comment = `[小说分析] ${entry.category || '素材'}`;
+    lore.keys = Array.isArray(entry.keys)
+      ? entry.keys.map((key) => key.trim()).filter((key) => key.length >= 2)
+      : [];
+    lore.content = entry.content || '';
+    lore.constant = false;
+    lore.enabled = true;
+    lore.position = entry.category === '规则' ? 'before_char' : 'after_char';
+    lore.insertion_order = categoryOrder(entry.category, index);
+    lore.priority = entry.category === '规则' || entry.category === '人物' ? 80 : 50;
+    lore.prevent_recursion = true;
+    lore.match_whole_words = true;
+    return lore;
+  }).filter((entry) => entry.content.trim());
+}
+
+function categoryOrder(category: string, index: number): number {
+  const base: Record<string, number> = {
+    人物: 300,
+    地点: 400,
+    势力: 450,
+    事件: 600,
+    规则: 100,
+  };
+  return (base[category] ?? 500) + index;
+}
+
+export function saveAnalysisLorebookImport(title: string, analysis: NovelAnalysisResult): LorebookEntry[] {
+  const entries = analysisToLorebookEntries(analysis);
+  sessionStorage.setItem(NOVEL_LOREBOOK_IMPORT_KEY, JSON.stringify({
+    title,
+    entries,
+    createdAt: new Date().toISOString(),
+  }));
+  return entries;
+}
+
+export function consumeAnalysisLorebookImport(): { title: string; entries: LorebookEntry[] } | null {
+  const raw = sessionStorage.getItem(NOVEL_LOREBOOK_IMPORT_KEY);
+  if (!raw) return null;
+  sessionStorage.removeItem(NOVEL_LOREBOOK_IMPORT_KEY);
+
+  try {
+    const parsed = JSON.parse(raw) as { title?: string; entries?: LorebookEntry[] };
+    if (!Array.isArray(parsed.entries)) return null;
+    return {
+      title: parsed.title || '',
+      entries: parsed.entries,
+    };
+  } catch {
+    return null;
+  }
 }

@@ -1,10 +1,12 @@
 import { useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { FileText, Download, Sparkles, BookMarked } from 'lucide-react';
 import { Button } from '../components/shared/Button';
 import { TextArea } from '../components/shared/TextArea';
 import {
   analyzeNovelText,
   exportAnalysisAsJson,
+  saveAnalysisLorebookImport,
   splitNovelText,
   type NovelAnalysisResult,
   type NovelChunk,
@@ -30,6 +32,7 @@ function Stat({ label, value }: { label: string; value: string | number }) {
 }
 
 export function NovelAnalysisPage() {
+  const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
@@ -80,6 +83,12 @@ export function NovelAnalysisPage() {
   const handleExport = () => {
     if (!analysis) return;
     downloadText(`${title || 'novel-analysis'}.json`, exportAnalysisAsJson(title, chunks, analysis));
+  };
+
+  const handleImportToWizard = () => {
+    if (!analysis) return;
+    saveAnalysisLorebookImport(title, analysis);
+    navigate('/wizard?fromNovelAnalysis=1');
   };
 
   return (
@@ -151,6 +160,9 @@ export function NovelAnalysisPage() {
             </Button>
             <Button variant="ghost" onClick={handleExport} disabled={!analysis}>
               <Download size={16} /> 导出结果
+            </Button>
+            <Button variant="secondary" onClick={handleImportToWizard} disabled={!analysis || (analysis?.lorebookEntries.length ?? 0) === 0}>
+              导入到世界书
             </Button>
           </div>
         </div>

@@ -220,6 +220,7 @@ export function useWizardState(editId?: number) {
     goNext,
     goPrev,
     goToStep,
+    setCurrentStep,
     saveCard,
     isEditMode: !!editId,
   };

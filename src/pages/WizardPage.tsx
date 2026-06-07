@@ -5,8 +5,8 @@
  * Architecture: Characters are the source of truth. When generated/edited,
  * their content is auto-injected as world book entries for efficient token usage.
  */
-import { useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useWizardState } from '../hooks/useWizardState';
 import { useAIGenerate } from '../hooks/useAIGenerate';
 import { useToast } from '../components/shared/Toast';
@@ -21,6 +21,7 @@ import { StepBeautify } from '../components/wizard/StepBeautify';
 import { StepReview } from '../components/wizard/StepReview';
 import { generateId, createEmptyLorebookEntry } from '../constants/defaults';
 import type { LorebookEntry, WizardCharacter } from '../constants/defaults';
+import { consumeAnalysisLorebookImport } from '../services/novel-analysis-service';
 
 /**
  * Sync character data → world book entries.
@@ -83,6 +84,8 @@ function syncCharacterEntries(
 export function WizardPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const importedNovelRef = useRef(false);
   const parsedId = id ? parseInt(id) : undefined;
   const editId = parsedId !== undefined && !isNaN(parsedId) ? parsedId : undefined;
 
@@ -98,6 +101,7 @@ export function WizardPage() {
     validateStep,
     goNext,
     goPrev,
+    setCurrentStep,
     saveCard,
     isEditMode,
   } = useWizardState(editId);
@@ -108,6 +112,23 @@ export function WizardPage() {
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
   const { generateCharacterParsedStreaming } = useAIGenerate();
   const { addToast } = useToast();
+
+  useEffect(() => {
+    if (loading || editId || importedNovelRef.current) return;
+    if (!location.search.includes('fromNovelAnalysis=1')) return;
+
+    const payload = consumeAnalysisLorebookImport();
+    if (!payload || payload.entries.length === 0) return;
+
+    importedNovelRef.current = true;
+    updateDraft({
+      cardName: draft.cardName || payload.title || '小说分析角色卡',
+      lorebookEntries: [...draft.lorebookEntries, ...payload.entries],
+    });
+    setCurrentStep(3);
+    addToast('success', `已导入 ${payload.entries.length} 条小说世界书素材`);
+    navigate('/wizard', { replace: true });
+  }, [loading, editId, location.search, draft.cardName, draft.lorebookEntries, updateDraft, setCurrentStep, addToast, navigate]);
 
   // Character descriptions summary (for AI prompts in later steps)
   const characterDescriptions = draft.characters
