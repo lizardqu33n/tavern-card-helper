@@ -42,6 +42,14 @@ export function NovelAnalysisPage() {
   const [error, setError] = useState('');
 
   const totalChars = useMemo(() => text.trim().length, [text]);
+  const lorebookCategoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    analysis?.lorebookEntries.forEach((entry) => {
+      const category = entry.category || '素材';
+      counts[category] = (counts[category] || 0) + 1;
+    });
+    return counts;
+  }, [analysis]);
 
   const handleChunk = () => {
     setError('');
@@ -112,7 +120,7 @@ export function NovelAnalysisPage() {
               <h1 className="text-2xl font-bold text-slate-100">小说分析提取</h1>
             </div>
             <p className="mt-2 text-sm text-slate-400">
-              参考 World-Agent 的智能切块与深度勘探思路，提取人物、地点、势力、时间线和可转世界书素材。
+              按世界书结构拆分小说素材：人物、外貌着装、关系枢纽、事件、地点、势力、特定设定与文风都会分条生成。
             </p>
           </div>
           <Button variant="secondary" onClick={() => fileRef.current?.click()}>
@@ -172,7 +180,9 @@ export function NovelAnalysisPage() {
             <Stat label="文本字数" value={totalChars} />
             <Stat label="切块数量" value={chunks.length} />
             <Stat label="人物" value={analysis?.characters.length ?? '-'} />
-            <Stat label="世界书素材" value={analysis?.lorebookEntries.length ?? '-'} />
+            <Stat label="世界书条目" value={analysis?.lorebookEntries.length ?? '-'} />
+            <Stat label="人物关系" value={analysis?.relationshipMap.length ?? '-'} />
+            <Stat label="特定设定" value={analysis?.uniqueSettings.length ?? '-'} />
           </div>
 
           <div className="rounded-xl border border-slate-700/50 bg-slate-900/35 p-4 backdrop-blur-sm">
@@ -206,14 +216,43 @@ export function NovelAnalysisPage() {
             <p className="whitespace-pre-wrap rounded-lg bg-slate-800/50 p-3 text-sm text-slate-300">{analysis.summary}</p>
           </section>
 
+          <section>
+            <h3 className="mb-2 text-sm font-medium text-emerald-300">文风画像</h3>
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="rounded-lg bg-slate-800/50 p-3 text-sm text-slate-300">
+                <div className="font-medium text-slate-100">叙述</div>
+                <p className="mt-1 text-slate-400">{analysis.styleProfile.narration || '无'}</p>
+              </div>
+              <div className="rounded-lg bg-slate-800/50 p-3 text-sm text-slate-300">
+                <div className="font-medium text-slate-100">对白</div>
+                <p className="mt-1 text-slate-400">{analysis.styleProfile.dialogue || '无'}</p>
+              </div>
+              <div className="rounded-lg bg-slate-800/50 p-3 text-sm text-slate-300">
+                <div className="font-medium text-slate-100">节奏</div>
+                <p className="mt-1 text-slate-400">{analysis.styleProfile.pacing || '无'}</p>
+              </div>
+              <div className="rounded-lg bg-slate-800/50 p-3 text-sm text-slate-300">
+                <div className="font-medium text-slate-100">意象</div>
+                <p className="mt-1 text-slate-400">{analysis.styleProfile.imagery || '无'}</p>
+              </div>
+            </div>
+            {analysis.styleProfile.taboos.length > 0 && (
+              <div className="mt-3 rounded-lg border border-amber-700/40 bg-amber-950/20 p-3 text-sm text-amber-200">
+                避免：{analysis.styleProfile.taboos.join('、')}
+              </div>
+            )}
+          </section>
+
           <section className="grid gap-4 lg:grid-cols-2">
             <div>
-              <h3 className="mb-2 text-sm font-medium text-emerald-300">人物</h3>
+              <h3 className="mb-2 text-sm font-medium text-emerald-300">人物逻辑枢纽</h3>
               <div className="space-y-2">
                 {analysis.characters.map((item, index) => (
                   <div key={`${item.name}-${index}`} className="rounded-lg border border-slate-700/40 bg-slate-800/40 p-3 text-sm">
                     <div className="font-semibold text-slate-100">{item.name} <span className="text-xs text-slate-500">{item.role}</span></div>
-                    <div className="mt-1 text-slate-400">特征：{item.traits?.join('、') || '无'}</div>
+                    <div className="mt-1 text-slate-400">逻辑枢纽：{item.logicHub || '无'}</div>
+                    <div className="mt-1 text-slate-500">外貌：{item.appearance || '无'}</div>
+                    {item.outfits?.length > 0 && <div className="mt-1 text-slate-500">着装：{item.outfits.map((outfit) => `${outfit.scene}：${outfit.description}`).join('；')}</div>}
                     <div className="mt-1 text-slate-500">依据：{item.evidence}</div>
                   </div>
                 ))}
@@ -221,7 +260,38 @@ export function NovelAnalysisPage() {
             </div>
 
             <div>
-              <h3 className="mb-2 text-sm font-medium text-emerald-300">时间线</h3>
+              <h3 className="mb-2 text-sm font-medium text-emerald-300">人物关系网络</h3>
+              <div className="space-y-2">
+                {analysis.relationshipMap.map((item, index) => (
+                  <div key={`${item.source}-${item.target}-${index}`} className="rounded-lg border border-slate-700/40 bg-slate-800/40 p-3 text-sm">
+                    <div className="font-semibold text-slate-100">{item.source} → {item.target}</div>
+                    <div className="mt-1 text-slate-400">{item.relation}：{item.conflictOrBond}</div>
+                    <div className="mt-1 text-slate-500">叙事功能：{item.storyFunction}</div>
+                  </div>
+                ))}
+                {analysis.relationshipMap.length === 0 && <p className="text-sm text-slate-500">暂无关系网络。</p>}
+              </div>
+            </div>
+          </section>
+
+          <section className="grid gap-4 lg:grid-cols-2">
+            <div>
+              <h3 className="mb-2 text-sm font-medium text-emerald-300">特定设定</h3>
+              <div className="space-y-2">
+                {analysis.uniqueSettings.map((item, index) => (
+                  <div key={`${item.name}-${index}`} className="rounded-lg border border-slate-700/40 bg-slate-800/40 p-3 text-sm">
+                    <div className="font-semibold text-slate-100">{item.name} <span className="text-xs text-emerald-300">{item.category}</span></div>
+                    <div className="mt-1 text-slate-400">{item.description}</div>
+                    <div className="mt-1 text-slate-500">独特性：{item.difference}</div>
+                    <div className="mt-1 text-slate-500">用途：{item.usage}</div>
+                  </div>
+                ))}
+                {analysis.uniqueSettings.length === 0 && <p className="text-sm text-slate-500">暂无特定设定。</p>}
+              </div>
+            </div>
+
+            <div>
+              <h3 className="mb-2 text-sm font-medium text-emerald-300">事件时间线</h3>
               <div className="space-y-2">
                 {analysis.timeline.map((item) => (
                   <div key={item.order} className="rounded-lg border border-slate-700/40 bg-slate-800/40 p-3 text-sm">
@@ -234,7 +304,16 @@ export function NovelAnalysisPage() {
           </section>
 
           <section>
-            <h3 className="mb-2 text-sm font-medium text-emerald-300">世界书素材</h3>
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="text-sm font-medium text-emerald-300">世界书条目</h3>
+              <div className="flex flex-wrap gap-1.5">
+                {Object.entries(lorebookCategoryCounts).map(([category, count]) => (
+                  <span key={category} className="rounded-full bg-emerald-900/30 px-2 py-0.5 text-[11px] text-emerald-200">
+                    {category} × {count}
+                  </span>
+                ))}
+              </div>
+            </div>
             <div className="grid gap-3 lg:grid-cols-2">
               {analysis.lorebookEntries.map((entry, index) => (
                 <div key={`${entry.name}-${index}`} className="rounded-lg border border-slate-700/40 bg-slate-800/40 p-3">
@@ -243,6 +322,13 @@ export function NovelAnalysisPage() {
                     <span className="rounded bg-emerald-900/40 px-1.5 py-0.5 text-[10px] text-emerald-300">{entry.category}</span>
                   </div>
                   <div className="mt-2 text-xs text-slate-500">触发词：{entry.keys?.join('、')}</div>
+                  {(entry.parent || entry.purpose) && (
+                    <div className="mt-1 text-xs text-slate-500">
+                      {entry.parent && <span>归属：{entry.parent}</span>}
+                      {entry.parent && entry.purpose && <span> · </span>}
+                      {entry.purpose && <span>用途：{entry.purpose}</span>}
+                    </div>
+                  )}
                   <pre className="mt-2 whitespace-pre-wrap rounded bg-slate-950/40 p-2 text-xs text-slate-300">{entry.content}</pre>
                 </div>
               ))}
