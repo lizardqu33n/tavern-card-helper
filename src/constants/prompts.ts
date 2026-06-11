@@ -543,6 +543,86 @@ export const CARD_DIAGNOSIS_PROMPT = () => ({
 });
 
 /**
+ * AI MVU config correction prompt.
+ * Analyzes the MVU variable configuration and suggests semantic fixes
+ * that deterministic validation cannot catch.
+ */
+export const MVU_CORRECTION_PROMPT = (
+  cardName: string,
+  variables: Array<{ path: string; kind: string; defaultValue: unknown; description: string }>,
+  existingIssues: string,
+) => ({
+  system: `你是一个 SillyTavern MVU 变量配置审核专家。你的任务是检查 MVU 变量配置中的语义问题并提出修正建议。
+
+检查范围：
+1. 变量命名规范：路径段是否语义清晰、是否用中文、是否含无意义命名（如“变量1”）
+2. 变量类型合理性：number 是否应该有范围限制、boolean 是否应该用 enum 代替
+3. 缺失变量：根据卡片内容，是否缺少重要的追踪变量（如时间、地点、关键事件标记）
+4. 冗余变量：是否有重复追踪同一事物的变量、是否有不必要的变量
+5. 默认值合理性：初始值是否符合角色设定
+6. 描述质量：变量描述是否足够清晰
+
+输出格式：JSON 数组，每个元素包含：
+- path: 变量路径（字符串）
+- action: "rename" | "change_type" | "add_range" | "add_variable" | "remove_variable" | "update_default" | "improve_description"
+- reason: 修正原因（中文）
+- suggestion: 建议的新值（JSON 对象，包含要修改的字段）
+
+只输出需要修正的变量，无需输出已正常的变量。只输出 JSON。`,
+  user: `审核以下 MVU 变量配置：
+
+卡片名称：${cardName}
+
+当前变量列表：
+${variables.map(v => `- ${v.path} (${v.kind}): ${v.description || '(无描述)'} = ${JSON.stringify(v.defaultValue)}`).join('\n')}
+
+已发现的确定性问题（仅供参考，不要重复报告）：
+${existingIssues || '(无)'}
+
+请分析语义层面的问题并输出修正建议。只输出 JSON 数组。`,
+});
+
+/**
+ * AI custom status bar generation prompt.
+ * Generates HTML + CSS for the MVU status bar based on user's visual style requirements.
+ */
+export const CUSTOM_STATUS_BAR_PROMPT = (
+  styleDescription: string,
+  variables: Array<{ path: string; kind: string; label: string; defaultValue: unknown }>,
+  mode: 'safe_macro' | 'dynamic_js',
+) => ({
+  system: `你是一个 SillyTavern 状态栏美化专家。你的任务是根据用户的视觉风格需求，生成状态栏的 HTML 和 CSS 代码。
+
+生成规则：
+1. HTML 结构：使用语义化 div 布局，每个变量一行，包含标签和值
+2. CSS 样式：内联在 <style> 标签中，不依赖外部样式表
+3. 响应式设计：适应不同宽度的消息框
+4. 性能优先：避免复杂动画和过多 box-shadow
+5. 只输出代码，不要任何解释文字
+
+${mode === 'safe_macro'
+    ? 'safe_macro 模式：变量值使用 {{format_message_variable::stat_data.路径}} 宏语法占位'
+    : 'dynamic_js 模式：变量值使用 <span id="mvu-路径">默认值</span> 并附带 JS 更新脚本'
+  }
+
+输出格式：JSON 对象，包含：
+- html: 状态栏 HTML 代码（字符串）
+- css: 状态栏 CSS 代码（字符串，不含 <style> 标签）`,
+  user: `请根据以下视觉风格需求生成状态栏：
+
+## 视觉风格需求
+${styleDescription}
+
+## 需要显示的变量
+${variables.map(v => `- ${v.label} (路径: ${v.path}, 类型: ${v.kind}, 默认值: ${JSON.stringify(v.defaultValue)})`).join('\n')}
+
+## 输出模式
+${mode === 'safe_macro' ? 'safe_macro — 使用 {{format_message_variable::stat_data.路径}} 占位变量值' : 'dynamic_js — 使用 JS 动态更新'}
+
+请输出 JSON 对象 { "html": "...", "css": "..." }。只输出 JSON。`,
+});
+
+/**
  * Utility: strip markdown code fences from AI responses.
  * AI models often wrap JSON in ```json ... ``` blocks.
  */

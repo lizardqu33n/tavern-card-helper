@@ -18,6 +18,8 @@ import { generateId } from '../../constants/defaults';
 import type { MvuConfig, MvuVariable, MvuVariableKind } from '../../constants/defaults';
 import { useAIGenerate } from '../../hooks/useAIGenerate';
 import { Button } from '../shared/Button';
+import { MvuStatusBarTest } from './MvuStatusBarTest';
+import { validateMvuConfig, autoFixMvuConfig, summarizeIssues, fixSingleIssue, applyAiCorrection, groupIssuesByCategory, type MvuIssue } from '../../services/mvu-validator';
 import {
   generateAllMvuAssets,
   downloadMvuAssets,
@@ -57,7 +59,14 @@ export function StepBeautify({
   const [previewTab, setPreviewTab] = useState<PreviewTab>('schema');
   const [showPreview, setShowPreview] = useState(false);
   const [editingVarId, setEditingVarId] = useState<string | null>(null);
-  const { generateMvuVariables } = useAIGenerate();
+  const [validationIssues, setValidationIssues] = useState<MvuIssue[] | null>(null);
+  const [aiCorrectionLoading, setAiCorrectionLoading] = useState(false);
+  const [aiCorrections, setAiCorrections] = useState<Array<{ path: string; action: string; reason: string; suggestion: Record<string, unknown> }> | null>(null);
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [appliedAi, setAppliedAI] = useState<Set<number>>(new Set());
+  const [customBarLoading, setCustomBarLoading] = useState(false);
+  const [customBarError, setCustomBarError] = useState<string | null>(null);
+  const { generateMvuVariables, correctMvuConfig, generateCustomStatusBar } = useAIGenerate();
 
   // ── Toggle MVU on/off ───────────────────────────────────────────────────
 
@@ -174,6 +183,127 @@ export function StepBeautify({
     onChange({ ...mvu, storyBeautifyEnabled: !mvu.storyBeautifyEnabled });
   }, [mvu, onChange]);
 
+  // ── Validation & Correction ──────────────────────────────────────────
+
+  const handleValidate = useCallback(() => {
+    const issues = validateMvuConfig(mvu);
+    setValidationIssues(issues);
+    setAiCorrections(null);
+    setAppliedAI(new Set());
+    // Auto-expand all categories with errors
+    const cats = new Set(issues.filter(i => i.severity === 'error').map(i => i.category));
+    setExpandedCategories(cats);
+  }, [mvu]);
+
+  const handleAutoFix = useCallback(() => {
+    const result = autoFixMvuConfig(mvu);
+    onChange(result.config);
+    setValidationIssues(result.remaining);
+  }, [mvu, onChange]);
+
+  const handleFixSingle = useCallback((issue: MvuIssue) => {
+    const fixed = fixSingleIssue(mvu, issue);
+    onChange(fixed);
+    // Re-validate
+    setValidationIssues(validateMvuConfig(fixed));
+  }, [mvu, onChange]);
+
+  const handleApplyAiCorrection = useCallback((index: number) => {
+    if (!aiCorrections || appliedAI.has(index)) return;
+    const correction = aiCorrections[index];
+    const fixed = applyAiCorrection(mvu, correction);
+    onChange(fixed);
+    setAppliedAI(prev => new Set([...prev, index]));
+    // Re-validate after applying
+    setValidationIssues(validateMvuConfig(fixed));
+  }, [mvu, aiCorrections, appliedAI, onChange]);
+
+  const handleApplyAllAiCorrections = useCallback(() => {
+    if (!aiCorrections) return;
+    let config = mvu;
+    const newApplied = new Set<number>();
+    aiCorrections.forEach((c, i) => {
+      if (!appliedAI.has(i)) {
+        config = applyAiCorrection(config, c);
+        newApplied.add(i);
+      }
+    });
+    onChange(config);
+    setAppliedAI(prev => new Set([...prev, ...newApplied]));
+    setValidationIssues(validateMvuConfig(config));
+  }, [mvu, aiCorrections, appliedAI, onChange]);
+
+  const toggleCategory = useCallback((cat: string) => {
+    setExpandedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat); else next.add(cat);
+      return next;
+    });
+  }, []);
+
+  const handleAiCorrection = useCallback(async () => {
+    if (!cardName?.trim()) return;
+    setAiCorrectionLoading(true);
+    try {
+      const existingIssues = validationIssues
+        ? validationIssues.map(i => `- [${i.severity}] ${i.category}: ${i.message}`).join('\n')
+        : '';
+      const variables = mvu.variables.map(v => ({
+        path: v.path.join('.'),
+        kind: v.kind,
+        defaultValue: v.defaultValue,
+        description: v.description,
+      }));
+      const corrections = await correctMvuConfig(cardName, variables, existingIssues);
+      setAiCorrections(corrections);
+    } catch {
+      // Error handled by useAIGenerate
+    } finally {
+      setAiCorrectionLoading(false);
+    }
+  }, [cardName, mvu.variables, validationIssues, correctMvuConfig]);
+
+  // ── Custom status bar generation ──────────────────────────────────────
+
+  const handleGenerateCustomBar = useCallback(async () => {
+    if (!mvu.statusBarStylePrompt.trim()) {
+      setCustomBarError('请先输入美化需求描述');
+      return;
+    }
+    if (mvu.variables.length === 0) {
+      setCustomBarError('请先添加 MVU 变量');
+      return;
+    }
+    setCustomBarLoading(true);
+    setCustomBarError(null);
+    try {
+      const variables = mvu.variables
+        .filter(v => !v.hidden && !v.path.some(s => s.startsWith('$')))
+        .map(v => ({
+          path: v.path.join('.'),
+          kind: v.kind,
+          label: v.path.at(-1) ?? v.path.join('.'),
+          defaultValue: v.defaultValue,
+        }));
+      const result = await generateCustomStatusBar(mvu.statusBarStylePrompt, variables, mvu.statusBarMode);
+      if (result.html || result.css) {
+        onChange({
+          ...mvu,
+          statusBarHtml: result.html,
+          statusBarCss: result.css,
+          statusBarCustomEnabled: true,
+          statusBarEnabled: true,
+        });
+      } else {
+        setCustomBarError('AI 未能生成状态栏代码，请尝试更详细的描述');
+      }
+    } catch {
+      setCustomBarError('生成失败，请检查 API 配置后重试');
+    } finally {
+      setCustomBarLoading(false);
+    }
+  }, [mvu, onChange, generateCustomStatusBar]);
+
   // ── Render ─────────────────────────────────────────────────────────────
 
   return (
@@ -249,6 +379,183 @@ export function StepBeautify({
             )}
           </div>
 
+          {/* ── Validation & Correction ─────────────────────────────────────── */}
+          <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-indigo-300">🔍 纠错与审核</h3>
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" size="sm" onClick={handleValidate}>
+                  检查问题
+                </Button>
+                {validationIssues && validationIssues.some(i => i.autoFixable) && (
+                  <Button size="sm" onClick={handleAutoFix}>
+                    🔧 自动修复
+                  </Button>
+                )}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleAiCorrection}
+                  disabled={aiCorrectionLoading}
+                >
+                  {aiCorrectionLoading ? 'AI 审核中...' : '🤖 AI 审核'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Validation results — grouped by category */}
+            {validationIssues !== null && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-slate-400">{summarizeIssues(validationIssues)}</p>
+                  {validationIssues.length > 0 && (
+                    <button
+                      onClick={() => setExpandedCategories(
+                        expandedCategories.size > 0 ? new Set() : new Set(validationIssues.map(i => i.category))
+                      )}
+                      className="text-[10px] text-slate-500 hover:text-slate-300"
+                    >
+                      {expandedCategories.size > 0 ? '全部折叠' : '全部展开'}
+                    </button>
+                  )}
+                </div>
+                {validationIssues.length > 0 && (
+                  <div className="max-h-[320px] overflow-y-auto space-y-1.5">
+                    {groupIssuesByCategory(validationIssues).map(group => {
+                      const isExpanded = expandedCategories.has(group.category);
+                      const hasErrors = group.issues.some(i => i.severity === 'error');
+                      const hasWarnings = group.issues.some(i => i.severity === 'warning');
+                      const fixableCount = group.issues.filter(i => i.autoFixable).length;
+                      return (
+                        <div key={group.category} className={`rounded-lg border ${
+                          hasErrors ? 'border-red-700/40' : hasWarnings ? 'border-amber-700/40' : 'border-slate-700/40'
+                        } overflow-hidden`}>
+                          {/* Category header — clickable to expand */}
+                          <button
+                            onClick={() => toggleCategory(group.category)}
+                            className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-800/50 transition-colors ${
+                              hasErrors ? 'bg-red-900/10' : hasWarnings ? 'bg-amber-900/10' : 'bg-slate-800/30'
+                            }`}
+                          >
+                            <span className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                            <span className={`font-semibold ${
+                              hasErrors ? 'text-red-300' : hasWarnings ? 'text-amber-300' : 'text-slate-400'
+                            }`}>{group.category}</span>
+                            <span className="text-slate-500">({group.issues.length})</span>
+                            {fixableCount > 0 && (
+                              <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-emerald-800/30 text-emerald-300">
+                                {fixableCount} 可修复
+                              </span>
+                            )}
+                          </button>
+                          {/* Expanded issues */}
+                          {isExpanded && (
+                            <div className="divide-y divide-slate-800/50">
+                              {group.issues.map(issue => (
+                                <div
+                                  key={issue.id}
+                                  className="flex items-start gap-2 px-3 py-2 text-xs"
+                                >
+                                  <span className="shrink-0 mt-0.5">
+                                    {issue.severity === 'error' ? '❌' : issue.severity === 'warning' ? '⚠️' : 'ℹ️'}
+                                  </span>
+                                  <div className="flex-1 min-w-0">
+                                    <p className={`${
+                                      issue.severity === 'error' ? 'text-red-300' : issue.severity === 'warning' ? 'text-amber-300' : 'text-slate-400'
+                                    }`}>{issue.message}</p>
+                                    {issue.variableId && (
+                                      <p className="text-[10px] text-slate-600 mt-0.5 font-mono">
+                                        ID: {issue.variableId.slice(0, 8)}...
+                                      </p>
+                                    )}
+                                  </div>
+                                  {issue.autoFixable && (
+                                    <button
+                                      onClick={() => handleFixSingle(issue)}
+                                      className="shrink-0 text-[10px] px-2 py-1 rounded bg-emerald-800/30 text-emerald-300 hover:bg-emerald-700/40 transition-colors"
+                                    >
+                                      🔧 {issue.fixLabel || '修复'}
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* AI correction results */}
+            {aiCorrections !== null && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-slate-400">
+                    {aiCorrections.length > 0
+                      ? `🤖 AI 发现 ${aiCorrections.length} 个语义问题`
+                      : '🤖 AI 未发现问题'}
+                  </p>
+                  {aiCorrections.length > 0 && (
+                    <button
+                      onClick={handleApplyAllAiCorrections}
+                      disabled={appliedAi.size >= aiCorrections.length}
+                      className="text-[10px] px-2 py-1 rounded bg-violet-800/40 text-violet-200 hover:bg-violet-700/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {appliedAi.size >= aiCorrections.length ? '✅ 已全部应用' : `应用全部 (${aiCorrections.length - appliedAi.size})`}
+                    </button>
+                  )}
+                </div>
+                {aiCorrections.length > 0 && (
+                  <div className="max-h-[280px] overflow-y-auto space-y-1.5">
+                    {aiCorrections.map((c, i) => {
+                      const isApplied = appliedAi.has(i);
+                      return (
+                        <div
+                          key={i}
+                          className={`px-3 py-2.5 rounded-lg border text-xs transition-all ${
+                            isApplied
+                              ? 'bg-emerald-900/10 border-emerald-700/30 opacity-60'
+                              : 'bg-violet-900/15 border-violet-700/30'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="text-violet-300 font-medium font-mono">{c.path}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-800/40 text-violet-200">
+                              {c.action}
+                            </span>
+                            {isApplied && (
+                              <span className="ml-auto text-[10px] text-emerald-400">✅ 已应用</span>
+                            )}
+                            {!isApplied && (
+                              <button
+                                onClick={() => handleApplyAiCorrection(i)}
+                                className="ml-auto text-[10px] px-2 py-1 rounded bg-violet-700/40 text-violet-200 hover:bg-violet-600/50 transition-colors"
+                              >
+                                应用
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-slate-400 leading-relaxed">{c.reason}</p>
+                          {c.suggestion && Object.keys(c.suggestion).length > 0 && (
+                            <div className="mt-1.5 p-2 rounded bg-slate-900/50 border border-slate-800/50">
+                              <p className="text-[10px] text-slate-500 mb-1">建议修改：</p>
+                              <pre className="text-[10px] text-violet-300/70 font-mono whitespace-pre-wrap">
+                                {JSON.stringify(c.suggestion, null, 2)}
+                              </pre>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Frontend beautification options */}
           <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-5 space-y-4">
             <h3 className="text-sm font-semibold text-indigo-300">前端美化选项</h3>
@@ -276,6 +583,56 @@ export function StepBeautify({
                 </select>
               )}
             </div>
+
+            {/* Custom status bar style prompt */}
+            {mvu.statusBarEnabled && (
+              <div className="rounded-lg border border-cyan-800/40 bg-cyan-950/20 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-semibold text-cyan-300">✨ 自定义美化风格</h4>
+                  {mvu.statusBarCustomEnabled && (
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-800/30 text-emerald-300">已启用自定义</span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  描述你想要的状态栏视觉风格，AI 会生成对应的 HTML + CSS。
+                </p>
+                <textarea
+                  value={mvu.statusBarStylePrompt}
+                  onChange={(e) => onChange({ ...mvu, statusBarStylePrompt: e.target.value })}
+                  placeholder={"例如：赛博朋克风格，深色背景配露光边框，变量用进度条显示，重要数值用红色高亮\n例如：古风仙侠风格，水墨背景，变量用卷轴式布局\n例如：极简暗黑风格，无多余装饰，数值用颜色编码"}
+                  className="w-full h-24 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 resize-y focus:border-cyan-500 focus:outline-none"
+                />
+                <div className="flex items-center gap-3">
+                  <Button
+                    size="sm"
+                    onClick={handleGenerateCustomBar}
+                    disabled={customBarLoading || !mvu.statusBarStylePrompt.trim()}
+                  >
+                    {customBarLoading ? '🤖 生成中...' : '🤖 AI 生成状态栏'}
+                  </Button>
+                  {mvu.statusBarCustomEnabled && (
+                    <button
+                      onClick={() => onChange({ ...mvu, statusBarCustomEnabled: false, statusBarHtml: '', statusBarCss: '' })}
+                      className="text-[10px] text-slate-500 hover:text-slate-300"
+                    >
+                      重置为默认样式
+                    </button>
+                  )}
+                </div>
+                {customBarError && (
+                  <p className="text-[11px] text-red-400">{customBarError}</p>
+                )}
+                {mvu.statusBarCustomEnabled && mvu.statusBarHtml && (
+                  <div className="rounded-lg border border-slate-700 bg-slate-950/50 p-3">
+                    <p className="text-[10px] text-slate-500 mb-2">生成结果预览：</p>
+                    <div className="max-h-[200px] overflow-y-auto">
+                      <style>{mvu.statusBarCss}</style>
+                      <div dangerouslySetInnerHTML={{ __html: mvu.statusBarHtml }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Story beautification */}
             <div className="flex flex-wrap items-center gap-3">
@@ -352,6 +709,9 @@ export function StepBeautify({
               </div>
             </div>
           )}
+
+          {/* MVU Status Bar Test Panel */}
+          <MvuStatusBarTest mvu={mvu} />
         </div>
       )}
     </div>

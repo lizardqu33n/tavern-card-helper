@@ -13,6 +13,8 @@ import {
   LOREBOOK_GENERATE_PROMPT,
   LOREBOOK_SKELETON_PROMPT,
   EXPAND_ENTRY_PROMPT,
+  MVU_CORRECTION_PROMPT,
+  CUSTOM_STATUS_BAR_PROMPT,
   FIRST_MESSAGE_PROMPT,
   EXAMPLE_DIALOGUES_PROMPT,
   ORGANIZE_ENTRIES_PROMPT,
@@ -378,6 +380,42 @@ export function useAIGenerate() {
     return parseAIJson(text) as ReturnType<typeof diagnoseCard> extends Promise<infer T> ? T : never;
   }, []);
 
+  /**
+   * AI MVU config correction — analyze variables for semantic issues.
+   */
+  const correctMvuConfig = useCallback(async (
+    cardName: string,
+    variables: Array<{ path: string; kind: string; defaultValue: unknown; description: string }>,
+    existingIssues: string,
+  ) => {
+    const prompts = MVU_CORRECTION_PROMPT(cardName, variables, existingIssues);
+    const text = await callAIWithPrompt(prompts.system, prompts.user, { temperature: 0.3, max_tokens: 2000, presetMode: 'none' });
+    const parsed = parseAIJson(text) as Array<{
+      path: string;
+      action: string;
+      reason: string;
+      suggestion: Record<string, unknown>;
+    }> | null;
+    return parsed || [];
+  }, []);
+
+  /**
+   * Generate custom status bar HTML + CSS based on user's visual style requirements.
+   */
+  const generateCustomStatusBar = useCallback(async (
+    styleDescription: string,
+    variables: Array<{ path: string; kind: string; label: string; defaultValue: unknown }>,
+    mode: 'safe_macro' | 'dynamic_js',
+  ) => {
+    const prompts = CUSTOM_STATUS_BAR_PROMPT(styleDescription, variables, mode);
+    const text = await callAIWithPrompt(prompts.system, prompts.user, { temperature: 0.7, max_tokens: 4000, presetMode: 'none' });
+    const parsed = parseAIJson(text) as { html?: string; css?: string } | null;
+    return {
+      html: parsed?.html || '',
+      css: parsed?.css || '',
+    };
+  }, []);
+
   return {
     generateCharacter,
     generateCharacterStreaming,
@@ -398,5 +436,7 @@ export function useAIGenerate() {
     expandLorebookEntry,
     translateCard,
     diagnoseCard,
+    correctMvuConfig,
+    generateCustomStatusBar,
   };
 }

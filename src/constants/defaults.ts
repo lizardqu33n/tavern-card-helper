@@ -154,6 +154,9 @@ export interface MvuConfig {
   statusBarHtml: string;
   statusBarCss: string;
   statusBarMode: 'safe_macro' | 'dynamic_js';
+  // Custom beautification requirements (user-inputted description for AI generation)
+  statusBarStylePrompt: string;   // User's visual style description
+  statusBarCustomEnabled: boolean; // Whether to use custom style instead of default
   // Story view beautification
   storyBeautifyEnabled: boolean;
   storyBeautifyTag: string;
@@ -344,6 +347,8 @@ export function createEmptyMvuConfig(): MvuConfig {
     statusBarHtml: '',
     statusBarCss: '',
     statusBarMode: 'safe_macro',
+    statusBarStylePrompt: '',
+    statusBarCustomEnabled: false,
     storyBeautifyEnabled: false,
     storyBeautifyTag: 'story_view',
     storyBeautifyHtml: '',
