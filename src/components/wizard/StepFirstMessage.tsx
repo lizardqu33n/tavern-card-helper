@@ -127,7 +127,7 @@ export function StepFirstMessage({ firstMessage, cardName, characterDescriptions
             size="sm"
             onClick={() => setShowRequirements(!showRequirements)}
           >
-            {showRequirements ? '收起要求' : '📝 写作要求'}
+            {showRequirements ? '收起要求' : (writingRequirements.trim() ? '📝 写作要求 ✅' : '📝 写作要求')}
           </Button>
           <Button
             variant="secondary"
@@ -151,20 +151,34 @@ export function StepFirstMessage({ firstMessage, cardName, characterDescriptions
 
       {/* Writing requirements panel */}
       {showRequirements && (
-        <div className="mb-4 rounded-xl border border-slate-700 bg-slate-800/50 p-4 space-y-3 animate-fade-in">
+        <div className="mb-4 rounded-xl border-2 border-amber-600/50 bg-amber-950/20 p-4 space-y-3 animate-fade-in">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-indigo-300">📝 用户写作要求</h3>
-            <span className="text-[10px] text-slate-500">AI 会严格遵守这些要求</span>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-amber-300">⚠️ 开场白内容要求（最高优先级）</h3>
+            </div>
+            {writingRequirements.trim() && (
+              <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-800/40 text-emerald-300">✅ 已填写，AI 将严格遵守</span>
+            )}
+          </div>
+          <div className="rounded-lg bg-amber-900/20 border border-amber-700/30 px-3 py-2">
+            <p className="text-[11px] text-amber-200/80 leading-relaxed">
+              <strong>重要：</strong>这里写的内容会<strong>覆盖</strong>角色设定的优先级。AI 会按照你的要求来写开场白的具体情节、场景和对话，而不是泛泛地基于角色设定自由发挥。写得越具体，效果越好。
+            </p>
           </div>
           <textarea
             value={writingRequirements}
             onChange={(e) => setWritingRequirements(e.target.value)}
-            placeholder={"例如：\n- 开场白要从角色的视角出发，用第一人称\n- 要有悬念感，结尾留下悬念\n- 场景设定在深夜的酒吧\n- 语气要带点懒漫和不耐烦\n- 要有对话元素，角色对 {{user}} 说话"}
-            className="w-full h-28 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 resize-y focus:border-indigo-500 focus:outline-none"
+            placeholder={"例如：\n- 开场白场景：深夜的酒吧，角色独自坐在角落喝酒\n- 用户走进酒吧，角色主动搭话\n- 语气要带点懒漫和不耐烦，但眼底有光\n- 必须包含一句对话：角色对 {{user}} 说\"这么晚了还来？\"\n- 结尾要留悬念，暗示角色有不可告人的过去"}
+            className="w-full h-32 rounded-lg border border-amber-600/40 bg-slate-900/80 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 resize-y focus:border-amber-500 focus:outline-none"
           />
-          <p className="text-[11px] text-slate-500">
-            提示：在这里描述你对开场白的具体要求，如场景、语气、必须包含的元素等。AI 会在生成时严格遵守。
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-slate-500">
+              💡 提示：场景、情节、对话、语气、必须包含的元素都可以写在这里。
+            </p>
+            {writingRequirements.trim() && (
+              <span className="text-[10px] text-slate-500 shrink-0">{writingRequirements.length} 字</span>
+            )}
+          </div>
         </div>
       )}
 

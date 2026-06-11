@@ -282,10 +282,16 @@ export const FIRST_MESSAGE_PROMPT = (cardName: string, characterDescriptions: st
   const lengthInstruction = targetWordCount
     ? `字数控制在 ${targetWordCount} 字左右（允许上下浮动 10%）。`
     : '至少写 500 字以上，内容越丰富越好。';
-  return {
-    system: `你正在为 AI 角色扮演角色撰写开场白（第一条消息）。
 
-## 开场白的写作要求：
+  // ── 写作要求强化：置于 system prompt 顶部，标记为最高优先级 ──
+  const requirementsBlock = writingRequirements
+    ? `\n\n## ⚠️ 最高优先级：用户指定的开场白内容要求\n\n以下是用户对开场白内容的**明确要求**，你**必须**按照这些要求来写，**绝对不可忽略或偏离**：\n\n${writingRequirements}\n\n**重要**：以上要求优先于角色设定。如果角色设定与用户要求冲突，以用户要求为准。你必须让开场白的内容、场景、情节与上述要求匹配。\n`
+    : '';
+
+  return {
+    system: `你正在为 AI 角色扮演角色撰写开场白（第一条消息）。${requirementsBlock}
+
+## 开场白的写作规范：
 
 1. **篇幅要求**：${lengthInstruction}
 2. **结构要素**：
@@ -304,17 +310,17 @@ export const FIRST_MESSAGE_PROMPT = (cardName: string, characterDescriptions: st
    - 不要写得太短、太概括
    - 不要用抽象形容词堆砌
    - 不要一次性把故事讲完，要留有余地
-${writingRequirements ? `\n5. **用户自定义要求**（必须严格遵守）：\n${writingRequirements}` : ''}
 
 请只输出消息正文，不要加引号、标题或其他标签。`,
     user: `为以下角色卡撰写开场白：
-
+${writingRequirements ? `\n⚠️⚠️⚠️ 最重要：用户要求开场白的内容必须围绕以下要求展开，不得偏离：\n${writingRequirements}\n⚠️⚠️⚠️\n` : ''}
 名称：${cardName}
-角色：
+角色设定（作为背景参考，但开场白的具体情节必须符合上方的用户要求）：
 ${characterDescriptions || '(暂无角色描述，请自由发挥)'}
-${worldbookContext ? `\n已有世界书设定（必须严格遵守，开场白不得与其冲突；优先使用其中的人物关系、世界规则、文风、事件和场景设定）：\n${worldbookContext}` : ''}
+${worldbookContext ? `\n已有世界书设定（不得冲突，但开场白情节优先按用户要求写）：\n${worldbookContext}` : ''}
 ${sceneHint ? `\n场景：${sceneHint}` : ''}
-${targetWordCount ? `\n【重要】字数要求约 ${targetWordCount} 字，请确保内容充实详。` : '\n【重要】请写长一些，至少 500 字，包含丰富的场景描写和角色互动。'}
+${targetWordCount ? `\n【字数】约 ${targetWordCount} 字，确保内容充实。` : '\n【字数】至少 500 字，包含丰富的场景描写和角色互动。'}
+${writingRequirements ? `\n最后提醒：开场白必须体现用户要求的内容和情节，不能只泛泛地基于角色设定写。` : ''}
 
 请只输出消息正文。`,
   };
