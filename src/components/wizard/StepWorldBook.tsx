@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { Button } from '../shared/Button';
 import { useToast } from '../shared/Toast';
 import { AIProgressPanel, type AIProgressStatus } from '../shared/AIProgressPanel';
-import { LorebookEntryEditor } from './LorebookEntryEditor';
+import { LorebookEntryEditor, type EntryExpandLevel } from './LorebookEntryEditor';
 import { AIGeneratePanel } from './AIGeneratePanel';
 import { OrganizePreviewTable } from './OrganizePreviewTable';
 import { useAIGenerate } from '../../hooks/useAIGenerate';
@@ -26,9 +26,12 @@ interface StepWorldBookProps {
   onUpdate: (entries: LorebookEntry[]) => void;
   /** Called when user clicks "下一步" (rendered inline with other action buttons) */
   onNext?: () => void;
+  /** Whether NSFW content generation is allowed for world book entries */
+  nsfw?: boolean;
+  onNsfwChange?: (nsfw: boolean) => void;
 }
 
-export function StepWorldBook({ entries, cardName, characterSummaries, existingWorldbookContext, onUpdate, onNext }: StepWorldBookProps) {
+export function StepWorldBook({ entries, cardName, characterSummaries, existingWorldbookContext, onUpdate, onNext, nsfw, onNsfwChange }: StepWorldBookProps) {
   const [generating, setGenerating] = useState(false);
   const [topic, setTopic] = useState('');
   const [worldRules, setWorldRules] = useState('');
@@ -48,22 +51,45 @@ export function StepWorldBook({ entries, cardName, characterSummaries, existingW
   const [searchQuery, setSearchQuery] = useState('');
   // AI expand state
   const [expandingIndex, setExpandingIndex] = useState<number | null>(null);
-  // Collapse state: Set of collapsed entry IDs
-  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
-  const { generateLorebookParsed, generateLorebookSkeleton, organizeEntries, generateEntryKeys, expandLorebookEntry } = useAIGenerate();
+  // Collapse state: Map of entry ID → expand level
+  const [expandLevels, setExpandLevels] = useState<Map<string, EntryExpandLevel>>(new Map());
+  // World overview state
+  const [worldOverview, setWorldOverview] = useState('');
+  const [showWorldOverview, setShowWorldOverview] = useState(false);
+  const [analyzingWorld, setAnalyzingWorld] = useState(false);
+  const [expandingOverview, setExpandingOverview] = useState(false);
+  const [worldAnalysisResult, setWorldAnalysisResult] = useState<{
+    worldOverview?: string;
+    suggestedEntries?: Array<{ name: string; type: string; keys: string[]; summary: string; priority: string }>;
+    worldDimensions?: string[];
+  } | null>(null);
+  const [expandRequirement, setExpandRequirement] = useState('');
+  const { generateLorebookParsed, generateLorebookSkeleton, organizeEntries, generateEntryKeys, expandLorebookEntry, analyzeWorldOverview, expandWorldOverview } = useAIGenerate();
   const { addToast } = useToast();
 
-  const toggleCollapse = (id: string) => {
-    setCollapsedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+  /** Cycle expand level: collapsed → preview → edit → collapsed */
+  const cycleExpand = (id: string) => {
+    setExpandLevels(prev => {
+      const next = new Map(prev);
+      const current = next.get(id) ?? 'collapsed';
+      const cycleMap: Record<EntryExpandLevel, EntryExpandLevel> = {
+        collapsed: 'preview',
+        preview: 'edit',
+        edit: 'collapsed',
+      };
+      const nextLevel = cycleMap[current];
+      if (nextLevel === 'collapsed') {
+        next.delete(id);
+      } else {
+        next.set(id, nextLevel);
+      }
       return next;
     });
   };
 
-  const collapseAll = () => setCollapsedIds(new Set(entries.map(e => e.id)));
-  const expandAll = () => setCollapsedIds(new Set());
-  const allCollapsed = entries.length > 0 && entries.every(e => collapsedIds.has(e.id));
+  const collapseAll = () => setExpandLevels(new Map(entries.map(e => [e.id, 'collapsed' as EntryExpandLevel])));
+  const expandAll = () => setExpandLevels(new Map());
+  const allCollapsed = entries.length > 0 && entries.every(e => (expandLevels.get(e.id) ?? 'collapsed') === 'collapsed');
 
   const addEntry = () => {
     onUpdate([...entries, createEmptyLorebookEntry()]);
@@ -75,6 +101,74 @@ export function StepWorldBook({ entries, cardName, characterSummaries, existingW
 
   const updateEntry = (index: number, updates: Partial<LorebookEntry>) => {
     onUpdate(entries.map((e, i) => (i === index ? { ...e, ...updates } : e)));
+  };
+
+  // ── World Overview handlers ──────────────────────────────────────────
+  const handleAnalyzeWorld = async () => {
+    setAnalyzingWorld(true);
+    setAiError(null);
+    setWorldAnalysisResult(null);
+    try {
+      const result = await analyzeWorldOverview(cardName, characterSummaries, worldOverview);
+      setWorldAnalysisResult(result);
+      if (result.worldOverview) {
+        setWorldOverview(result.worldOverview);
+        addToast('success', '世界观分析完成，已生成概述和建议条目');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '世界观分析失败';
+      setAiError(msg);
+      addToast('error', msg);
+    } finally {
+      setAnalyzingWorld(false);
+    }
+  };
+
+  const handleExpandOverview = async () => {
+    if (!worldOverview.trim()) {
+      addToast('error', '请先填写或生成世界观概述');
+      return;
+    }
+    setExpandingOverview(true);
+    setAiError(null);
+    try {
+      const expanded = await expandWorldOverview(cardName, characterSummaries, worldOverview, expandRequirement || undefined, nsfw);
+      if (expanded.trim()) {
+        setWorldOverview(expanded.trim());
+        setExpandRequirement('');
+        addToast('success', '世界观概述已扩写');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '世界观扩写失败';
+      setAiError(msg);
+      addToast('error', msg);
+    } finally {
+      setExpandingOverview(false);
+    }
+  };
+
+  const handleAddSuggestedEntries = () => {
+    if (!worldAnalysisResult?.suggestedEntries?.length) return;
+    const newEntries = worldAnalysisResult.suggestedEntries.map(s => {
+      const base = createEmptyLorebookEntry();
+      return {
+        ...base,
+        name: s.name,
+        keys: s.keys,
+        content: s.summary,
+        comment: s.name,
+        priority: s.priority === 'high' ? 100 : s.priority === 'medium' ? 50 : 10,
+        insertion_order: s.type === '背景' ? 100 : s.type === '地点' ? 400 : s.type === '势力' ? 350 : s.type === '事件' ? 600 : s.type === '物品' ? 500 : 200,
+      };
+    });
+    onUpdate([...entries, ...newEntries]);
+    // Auto-collapse newly added entries
+    setExpandLevels(prev => {
+      const next = new Map(prev);
+      newEntries.forEach(e => next.set(e.id, 'collapsed'));
+      return next;
+    });
+    addToast('success', `已添加 ${newEntries.length} 条建议条目`);
   };
 
   const handleBatchGenerate = async () => {
@@ -119,16 +213,16 @@ export function StepWorldBook({ entries, cardName, characterSummaries, existingW
         })) as LorebookEntry[];
 
         onUpdate([...entries, ...newEntries]);
-        // Auto-collapse newly generated entries
-        setCollapsedIds(prev => {
-          const next = new Set(prev);
-          newEntries.forEach(e => next.add(e.id));
+        // Auto-collapse newly generated entries (show as collapsed)
+        setExpandLevels(prev => {
+          const next = new Map(prev);
+          newEntries.forEach(e => next.set(e.id, 'collapsed'));
           return next;
         });
         addToast('success', `已生成 ${newEntries.length} 条骨架，点击「✨ AI 展开」逐条扩展`);
       } else {
         // ── Full mode: original behavior ──
-        const result = await generateLorebookParsed(cardName, characterSummaries, topic, consistencyRules || undefined);
+        const result = await generateLorebookParsed(cardName, characterSummaries, topic, consistencyRules || undefined, nsfw);
         if (Array.isArray(result) && result.length > 0) {
           const newEntries = result.map((item) => {
             const base = createEmptyLorebookEntry();
@@ -161,10 +255,10 @@ export function StepWorldBook({ entries, cardName, characterSummaries, existingW
             } as LorebookEntry;
           });
           onUpdate([...entries, ...newEntries]);
-          // Auto-collapse newly generated entries
-          setCollapsedIds(prev => {
-            const next = new Set(prev);
-            newEntries.forEach(e => next.add(e.id));
+          // Auto-collapse newly generated entries (show as collapsed)
+          setExpandLevels(prev => {
+            const next = new Map(prev);
+            newEntries.forEach(e => next.set(e.id, 'collapsed'));
             return next;
           });
         }
@@ -199,6 +293,8 @@ export function StepWorldBook({ entries, cardName, characterSummaries, existingW
         existingWorldbookContext
           ? `${characterSummaries}\n\n已有世界书（必须保持一致）：\n${existingWorldbookContext}`
           : characterSummaries,
+        undefined,
+        entry.expandNsfw,
       );
       updateEntry(index, {
         comment: result.comment,
@@ -407,6 +503,136 @@ export function StepWorldBook({ entries, cardName, characterSummaries, existingW
         </div>
       )}
 
+      {/* NSFW toggle */}
+      <div className="flex items-center gap-3 py-1 mb-4">
+        <label className="relative inline-flex items-center cursor-pointer">
+          <input
+            type="checkbox"
+            checked={nsfw ?? false}
+            onChange={(e) => onNsfwChange?.(e.target.checked)}
+            className="sr-only peer"
+          />
+          <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-rose-600" />
+        </label>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-slate-300">NSFW 内容</span>
+          <span className="text-[10px] text-slate-500">
+            {nsfw ? '允许世界书生成成人内容' : '关闭（适配模型审核）'}
+          </span>
+        </div>
+      </div>
+
+      {/* ── World Overview Section ──────────────────────────────────────── */}
+      <div className="rounded-xl border border-slate-700 bg-slate-800/30 p-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowWorldOverview(!showWorldOverview)}
+              className="text-xs text-slate-500 shrink-0 transition-transform duration-200"
+              style={{ transform: showWorldOverview ? 'rotate(0deg)' : 'rotate(-90deg)' }}
+            >▼</button>
+            <h3 className="text-sm font-semibold text-indigo-300">🌍 创作者世界观概述</h3>
+            {worldOverview.trim() && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-800/30 text-emerald-300">{worldOverview.length}字</span>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleAnalyzeWorld}
+              disabled={analyzingWorld}
+            >
+              {analyzingWorld ? '🌍 分析中...' : '🌍 AI 分析世界观'}
+            </Button>
+          </div>
+        </div>
+
+        {showWorldOverview && (
+          <div className="space-y-3 animate-fade-in">
+            <p className="text-[11px] text-slate-500">
+              描述你对这个世界观的设想。AI 会根据角色信息和你的概述，规划完整世界观并建议世界书条目。
+              如果觉得不够，可以用「AI 扩写」补充更多细节。
+            </p>
+
+            <textarea
+              value={worldOverview}
+              onChange={(e) => setWorldOverview(e.target.value)}
+              placeholder={"例如：\n时代背景：现代都市，灵气复苏后第10年\n社会结构：觉醒者分为S-F六个等级，由灵能局统一管理\n力量体系：灵能修炼，核心是\"共鸣\"——与环境灵气的共振频率\n地理：主城区+外围禁区，禁区有异变生物\n核心冲突：觉醒者与普通人的权利之争"}
+              className="w-full h-32 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 resize-y focus:border-indigo-500 focus:outline-none"
+            />
+
+            {/* AI expand controls */}
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={expandRequirement}
+                onChange={(e) => setExpandRequirement(e.target.value)}
+                placeholder={"补充要求（可选）：如\"多加点历史事件\"、\"详细描述力量体系\""}
+                className="flex-1 rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleExpandOverview}
+                disabled={expandingOverview || !worldOverview.trim()}
+              >
+                {expandingOverview ? '扩写中...' : '✍️ AI 扩写'}
+              </Button>
+            </div>
+
+            {/* Analysis results */}
+            {worldAnalysisResult && (
+              <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/50 p-3">
+                {/* Suggested entries */}
+                {worldAnalysisResult.suggestedEntries && worldAnalysisResult.suggestedEntries.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-medium text-slate-300">建议的世界书条目 ({worldAnalysisResult.suggestedEntries.length})</p>
+                      <Button size="sm" onClick={handleAddSuggestedEntries}>
+                        ➕ 添加全部建议
+                      </Button>
+                    </div>
+                    <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                      {worldAnalysisResult.suggestedEntries.map((s, i) => (
+                        <div key={i} className="flex items-start gap-2 px-2 py-1.5 rounded bg-slate-800/50 text-xs">
+                          <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] ${
+                            s.priority === 'high' ? 'bg-red-900/30 text-red-300' :
+                            s.priority === 'medium' ? 'bg-amber-900/30 text-amber-300' :
+                            'bg-slate-700 text-slate-400'
+                          }`}>{s.type}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-slate-200 font-medium truncate">{s.name}</p>
+                            <p className="text-slate-500 text-[10px] truncate">{s.summary}</p>
+                          </div>
+                          <span className="text-[10px] text-slate-600 shrink-0">
+                            {s.keys.slice(0, 3).join(', ')}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* World dimensions */}
+                {worldAnalysisResult.worldDimensions && worldAnalysisResult.worldDimensions.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-400 mb-1">世界观维度</p>
+                    <div className="flex flex-wrap gap-1">
+                      {worldAnalysisResult.worldDimensions.map((d, i) => (
+                        <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-900/30 text-indigo-300">
+                          {d}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Organize preview table */}
       {organizeResults && organizeResults.length > 0 && (
         <OrganizePreviewTable
@@ -469,29 +695,17 @@ export function StepWorldBook({ entries, cardName, characterSummaries, existingW
         {visibleEntries.map(({ entry, index }) => {
           const isSkeleton = (entry.content || '').length < 120;
           return (
-            <div key={entry.id} className="relative">
+            <div key={entry.id}>
               <LorebookEntryEditor
                 entry={entry}
                 index={index}
                 onUpdate={updateEntry}
                 onRemove={removeEntry}
-                collapsed={collapsedIds.has(entry.id)}
-                onToggleCollapse={() => toggleCollapse(entry.id)}
+                expandLevel={expandLevels.get(entry.id) ?? 'collapsed'}
+                onCycleExpand={() => cycleExpand(entry.id)}
+                expanding={expandingIndex === index}
+                onAiExpand={() => handleExpandEntry(index)}
               />
-              {/* AI Expand button — shows on skeletons */}
-              {isSkeleton && (
-                <div className="absolute top-3 right-16 z-10">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => handleExpandEntry(index)}
-                    disabled={expandingIndex === index}
-                    className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs"
-                  >
-                    {expandingIndex === index ? '⏳ 展开中...' : '🦴→📖 AI 展开'}
-                  </Button>
-                </div>
-              )}
             </div>
           );
         })}

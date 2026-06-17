@@ -3,7 +3,7 @@
  * Supports AI generation with real-time streaming progress, word count control,
  * custom writing requirements, and empty response detection with auto-retry.
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { TextArea } from '../shared/TextArea';
 import { Button } from '../shared/Button';
 import { AIProgressPanel, type AIProgressStatus } from '../shared/AIProgressPanel';
@@ -39,10 +39,12 @@ export function StepFirstMessage({ firstMessage, cardName, characterDescriptions
   const [targetWordCount, setTargetWordCount] = useState(0);
   const [writingRequirements, setWritingRequirements] = useState('');
   const [retryCount, setRetryCount] = useState(0);
+  const retryCountRef = useRef(0);
   const [showRequirements, setShowRequirements] = useState(false);
 
   const handleStreamGenerate = useCallback(async (isRetry = false) => {
     if (!isRetry) {
+      retryCountRef.current = 0;
       setRetryCount(0);
     }
     setAiStatus('generating');
@@ -66,12 +68,13 @@ export function StepFirstMessage({ firstMessage, cardName, characterDescriptions
       // ── Empty response detection ──────────────────────────────────────
       const trimmed = fullText.trim();
       if (trimmed.length < MIN_RESPONSE_LENGTH) {
-        const currentRetry = isRetry ? retryCount + 1 : 1;
+        retryCountRef.current = isRetry ? retryCountRef.current + 1 : 1;
+        const currentRetry = retryCountRef.current;
+        setRetryCount(currentRetry);
         if (currentRetry <= MAX_AUTO_RETRIES) {
           // Auto-retry
-          setRetryCount(currentRetry);
           setAiText(`⚠️ AI 返回内容过短（${trimmed.length} 字），自动重试中 (${currentRetry}/${MAX_AUTO_RETRIES})...\n\n`);
-          setTimeout(() => handleStreamGenerate(true), 800);
+          setTimeout(() => handleStreamGenerate(true), 1000);
           return;
         } else {
           // Exhausted retries
@@ -87,7 +90,7 @@ export function StepFirstMessage({ firstMessage, cardName, characterDescriptions
       setAiStatus('error');
       setAiError(err instanceof Error ? err.message : '生成失败');
     }
-  }, [cardName, characterDescriptions, generateFirstMessageStreaming, targetWordCount, worldbookContext, writingRequirements, retryCount]);
+  }, [cardName, characterDescriptions, generateFirstMessageStreaming, targetWordCount, worldbookContext, writingRequirements]);
 
   const handleAccept = useCallback(() => {
     if (pendingResult) {

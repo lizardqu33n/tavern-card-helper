@@ -273,6 +273,7 @@ ${e.content || ''}`)
         () => {},
         otherCharsContext || undefined,
         char.alignment || undefined,
+        char.nsfw ?? false,
       );
       if (typeof result === 'object' && result !== null) {
         const parsed = result as Record<string, unknown>;
@@ -356,6 +357,7 @@ ${e.content || ''}`)
             () => {},
             otherCharsContext || undefined,
             char.alignment || undefined,
+            char.nsfw ?? false,
           );
 
           console.log(`[批量生成] 角色 ${char.name} 生成完成, result type:`, typeof result, result ? 'truthy' : 'falsy');
@@ -535,6 +537,8 @@ ${e.content || ''}`)
             existingWorldbookContext={worldbookContext}
             onUpdate={(entries) => updateDraft({ lorebookEntries: entries })}
             onNext={handleNext}
+            nsfw={draft.worldbookNsfw}
+            onNsfwChange={(nsfw) => updateDraft({ worldbookNsfw: nsfw })}
           />
         );
       case 4:

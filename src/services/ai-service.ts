@@ -116,7 +116,16 @@ function isRetryableStatus(status: number): boolean {
 }
 
 function isRetryableError(err: unknown): boolean {
-  return err instanceof TypeError || (err instanceof DOMException && err.name === 'AbortError');
+  if (err instanceof TypeError) return true;
+  if (err instanceof DOMException && err.name === 'AbortError') return true;
+  // Retry on empty response errors (up to max retries)
+  if (err instanceof Error && (
+    err.message.includes('AI 返回了空内容') ||
+    err.message.includes('AI 响应没有内容')
+  )) return true;
+  // Retry on API errors that might be transient
+  if (err instanceof Error && err.message.includes('AI API 返回错误')) return true;
+  return false;
 }
 
 function normalizeMaxTokens(maxTokens: number | undefined): number {
@@ -287,40 +296,71 @@ export async function callAIStreaming(
       const decoder = new TextDecoder();
       let fullText = '';
       let buffer = '';
+      let receivedAnyData = false;
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
+        const lines = buffer.split(/\r?\n/);
         buffer = lines.pop() || '';
 
         for (const rawLine of lines) {
           const line = rawLine.trimEnd();
+          if (!line) continue;
+
           if (line.startsWith('data:')) {
             const data = line.slice(5).trim();
             if (data === '[DONE]') {
+              // Stream finished — check if we got any content
+              if (!fullText.trim()) {
+                throw new Error('AI 返回了空内容（流式响应无数据）');
+              }
               return fullText;
             }
             try {
               const parsed = JSON.parse(data);
+
+              // Check for error in response
+              if (parsed.error) {
+                const errMsg = typeof parsed.error === 'string'
+                  ? parsed.error
+                  : (parsed.error as Record<string, unknown>)?.message || JSON.stringify(parsed.error);
+                throw new Error(`AI API 返回错误：${errMsg}`);
+              }
+
               const choice = parsed.choices?.[0];
+              // Try multiple content extraction paths for compatibility
               const content =
                 textFromContentParts(choice?.delta?.content) ||
                 textFromContentParts(choice?.message?.content) ||
-                textFromContentParts(choice?.text);
+                textFromContentParts(choice?.delta?.text) ||
+                textFromContentParts(choice?.text) ||
+                textFromContentParts(parsed.text) ||
+                textFromContentParts(parsed.output_text) ||
+                textFromContentParts(parsed.response);
+
               if (content) {
+                receivedAnyData = true;
                 fullText += content;
                 onChunk(content, fullText);
               }
-            } catch {
-              // skip malformed JSON
+            } catch (parseErr) {
+              // If it's our thrown error (AI API error), re-throw it
+              if (parseErr instanceof Error && parseErr.message.startsWith('AI API 返回错误')) {
+                throw parseErr;
+              }
+              // skip other malformed JSON
             }
           }
         }
       }
 
+      // Stream ended without [DONE] — check if we got content
+      if (!fullText.trim()) {
+        throw new Error('AI 返回了空内容（流结束但无数据）');
+      }
       return fullText;
     } catch (err: unknown) {
       if (attempt < maxRetries && isRetryableError(err)) {

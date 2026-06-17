@@ -140,12 +140,19 @@ export function CharacterEditor({
         placeholder="输入角色名称"
       />
 
-      {/* Alignment selector (optional D&D nine-grid) */}
-      <div>
-        <label className="block text-xs font-medium text-slate-400 mb-1.5">
-          人格阵营 <span className="text-slate-600">（可选，约束 AI 生成的人格倾向）</span>
-        </label>
-        <div className="grid grid-cols-3 gap-1.5">
+      {/* Alignment selector (optional D&D nine-grid) — collapsible */}
+      <details className="group">
+        <summary className="flex items-center gap-2 cursor-pointer select-none text-xs font-medium text-slate-400 mb-1.5 hover:text-slate-300 transition-colors">
+          <span className="transition-transform group-open:rotate-90">▶</span>
+          人格阵营
+          <span className="text-slate-600 font-normal">（可选，约束 AI 生成的人格倾向）</span>
+          {character.alignment && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-900/40 text-indigo-300 border border-indigo-700/40">
+              {CHARACTER_ALIGNMENTS.find(a => a.value === character.alignment)?.label || character.alignment}
+            </span>
+          )}
+        </summary>
+        <div className="grid grid-cols-3 gap-1.5 mt-2">
           <button
             onClick={() => onUpdate({ alignment: undefined })}
             className={`text-[11px] py-1.5 px-2 rounded border transition-colors ${
@@ -170,6 +177,25 @@ export function CharacterEditor({
               {a.label}
             </button>
           ))}
+        </div>
+      </details>
+
+      {/* NSFW toggle */}
+      <div className="flex items-center gap-3 py-1">
+        <label className="relative inline-flex items-center cursor-pointer">
+          <input
+            type="checkbox"
+            checked={character.nsfw ?? false}
+            onChange={(e) => onUpdate({ nsfw: e.target.checked })}
+            className="sr-only peer"
+          />
+          <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-rose-600" />
+        </label>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-slate-300">NSFW 内容</span>
+          <span className="text-[10px] text-slate-500">
+            {character.nsfw ? '允许生成成人内容' : '关闭（适配模型审核）'}
+          </span>
         </div>
       </div>
 

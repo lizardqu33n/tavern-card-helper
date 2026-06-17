@@ -23,6 +23,8 @@ import {
   TRANSLATE_CARD_PROMPT,
   CARD_DIAGNOSIS_PROMPT,
   MODIFY_CHARACTER_PROMPT,
+  WORLD_OVERVIEW_PROMPT,
+  WORLD_OVERVIEW_EXPAND_PROMPT,
   POLISH_SELECTION_PROMPT,
   parseAIJson,
 } from '../constants/prompts';
@@ -86,8 +88,9 @@ export function useAIGenerate() {
     hint: string,
     otherCharactersContext?: string,
     alignment?: string,
+    nsfw?: boolean,
   ): Promise<string> => {
-    const prompts = CHARACTER_GENERATE_PROMPT(characterName, hint, otherCharactersContext, alignment);
+    const prompts = CHARACTER_GENERATE_PROMPT(characterName, hint, otherCharactersContext, alignment, nsfw);
     return callAIWithPrompt(prompts.system, prompts.user, { temperature: 0.85, max_tokens: 4000, presetMode: 'force' });
   }, []);
 
@@ -102,8 +105,9 @@ export function useAIGenerate() {
     onChunk: StreamCallback,
     otherCharactersContext?: string,
     alignment?: string,
+    nsfw?: boolean,
   ): Promise<string> => {
-    const prompts = CHARACTER_GENERATE_PROMPT(characterName, hint, otherCharactersContext, alignment);
+    const prompts = CHARACTER_GENERATE_PROMPT(characterName, hint, otherCharactersContext, alignment, nsfw);
     return callAIWithPromptStreaming(prompts.system, prompts.user, onChunk, { temperature: 0.85, max_tokens: 4000, presetMode: 'force' });
   }, []);
 
@@ -116,8 +120,9 @@ export function useAIGenerate() {
     hint: string,
     otherCharactersContext?: string,
     alignment?: string,
+    nsfw?: boolean,
   ) => {
-    const text = await generateCharacter(characterName, hint, otherCharactersContext, alignment);
+    const text = await generateCharacter(characterName, hint, otherCharactersContext, alignment, nsfw);
     const parsed = parseAIJson(text) as AIGeneratedCharacter | null;
 
     if (!parsed) return { description: text };
@@ -138,8 +143,9 @@ export function useAIGenerate() {
     onChunk: StreamCallback,
     otherCharactersContext?: string,
     alignment?: string,
+    nsfw?: boolean,
   ) => {
-    const text = await generateCharacterStreaming(characterName, hint, onChunk, otherCharactersContext, alignment);
+    const text = await generateCharacterStreaming(characterName, hint, onChunk, otherCharactersContext, alignment, nsfw);
     const parsed = parseAIJson(text) as AIGeneratedCharacter | null;
 
     if (!parsed) return { description: text };
@@ -177,8 +183,8 @@ export function useAIGenerate() {
    * Generate lorebook entries in batch.
    * @returns Raw text response
    */
-  const generateLorebook = useCallback(async (cardName: string, characterSummaries: string, topic: string, rules?: string): Promise<string> => {
-    const prompts = LOREBOOK_GENERATE_PROMPT(cardName, characterSummaries, topic, rules);
+  const generateLorebook = useCallback(async (cardName: string, characterSummaries: string, topic: string, rules?: string, nsfw?: boolean): Promise<string> => {
+    const prompts = LOREBOOK_GENERATE_PROMPT(cardName, characterSummaries, topic, rules, nsfw);
     return callAIWithPrompt(prompts.system, prompts.user, { temperature: 0.8, max_tokens: 8000, presetMode: 'force' });
   }, []);
 
@@ -191,8 +197,9 @@ export function useAIGenerate() {
     topic: string,
     onChunk: StreamCallback,
     rules?: string,
+    nsfw?: boolean,
   ): Promise<string> => {
-    const prompts = LOREBOOK_GENERATE_PROMPT(cardName, characterSummaries, topic, rules);
+    const prompts = LOREBOOK_GENERATE_PROMPT(cardName, characterSummaries, topic, rules, nsfw);
     return callAIWithPromptStreaming(prompts.system, prompts.user, onChunk, { temperature: 0.8, max_tokens: 8000, presetMode: 'force' });
   }, []);
 
@@ -200,8 +207,8 @@ export function useAIGenerate() {
    * Generate lorebook entries and parse as JSON array.
    * Returns entries with all V2 spec + SillyTavern runtime fields.
    */
-  const generateLorebookParsed = useCallback(async (cardName: string, characterSummaries: string, topic: string, rules?: string) => {
-    const text = await generateLorebook(cardName, characterSummaries, topic, rules);
+  const generateLorebookParsed = useCallback(async (cardName: string, characterSummaries: string, topic: string, rules?: string, nsfw?: boolean) => {
+    const text = await generateLorebook(cardName, characterSummaries, topic, rules, nsfw);
     const parsed = parseAIJson(text) as AIGeneratedLorebookEntry[] | null;
     return parsed || [];
   }, [generateLorebook]);
@@ -215,8 +222,9 @@ export function useAIGenerate() {
     topic: string,
     onChunk: StreamCallback,
     rules?: string,
+    nsfw?: boolean,
   ) => {
-    const text = await generateLorebookStreaming(cardName, characterSummaries, topic, onChunk, rules);
+    const text = await generateLorebookStreaming(cardName, characterSummaries, topic, onChunk, rules, nsfw);
     const parsed = parseAIJson(text) as AIGeneratedLorebookEntry[] | null;
     return parsed || [];
   }, [generateLorebookStreaming]);
@@ -333,9 +341,10 @@ export function useAIGenerate() {
     },
     characterContext: string,
     userRequirement?: string,
+    nsfw?: boolean,
   ) => {
     const isSkeleton = (entry.content || '').length < 120;
-    const prompts = EXPAND_ENTRY_PROMPT(entry, characterContext, isSkeleton, userRequirement);
+    const prompts = EXPAND_ENTRY_PROMPT(entry, characterContext, isSkeleton, userRequirement, nsfw);
     const text = await callAIWithPrompt(prompts.system, prompts.user, { temperature: 0.8, max_tokens: 6000, presetMode: 'force' });
     const parsed = parseAIJson(text) as { comment?: string; content?: string; keys?: string[]; strategy?: string } | null;
 
@@ -345,6 +354,45 @@ export function useAIGenerate() {
       keys: parsed?.keys ?? entry.keys,
       strategy: parsed?.strategy ?? entry.strategy,
     };
+  }, []);
+
+  /**
+   * Analyze world overview: AI analyzes character info + creator's overview,
+   * plans the world, and generates a concise overview + suggested entries.
+   */
+  const analyzeWorldOverview = useCallback(async (
+    cardName: string,
+    characterSummaries: string,
+    creatorOverview: string,
+  ) => {
+    const prompts = WORLD_OVERVIEW_PROMPT(cardName, characterSummaries, creatorOverview);
+    const text = await callAIWithPrompt(prompts.system, prompts.user, { temperature: 0.7, max_tokens: 4000, presetMode: 'none' });
+    const parsed = parseAIJson(text) as {
+      worldOverview?: string;
+      suggestedEntries?: Array<{
+        name: string;
+        type: string;
+        keys: string[];
+        summary: string;
+        priority: string;
+      }>;
+      worldDimensions?: string[];
+    } | null;
+    return parsed || { worldOverview: '', suggestedEntries: [], worldDimensions: [] };
+  }, []);
+
+  /**
+   * Expand the creator's world overview with more detail.
+   */
+  const expandWorldOverview = useCallback(async (
+    cardName: string,
+    characterSummaries: string,
+    currentOverview: string,
+    userRequirement?: string,
+    nsfw?: boolean,
+  ): Promise<string> => {
+    const prompts = WORLD_OVERVIEW_EXPAND_PROMPT(cardName, characterSummaries, currentOverview, userRequirement, nsfw);
+    return callAIWithPrompt(prompts.system, prompts.user, { temperature: 0.8, max_tokens: 4000, presetMode: 'force' });
   }, []);
 
   /**
@@ -529,5 +577,7 @@ export function useAIGenerate() {
     generateCustomStatusBar,
     modifyCharacterDescription,
     polishSelection,
+    analyzeWorldOverview,
+    expandWorldOverview,
   };
 }

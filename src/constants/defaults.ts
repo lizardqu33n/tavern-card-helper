@@ -32,6 +32,8 @@ export interface LorebookEntry {
   priority: number;
   case_sensitive: boolean;
   comment: string;
+  /** Per-entry NSFW toggle for AI expansion feature */
+  expandNsfw?: boolean;
   // ST runtime
   probability: number;
   group: string;
@@ -56,6 +58,8 @@ export interface WizardCharacter {
   description: string;
   /** Optional D&D-style moral alignment constraint for AI generation */
   alignment?: string;
+  /** Whether NSFW content generation is allowed for this character */
+  nsfw?: boolean;
   /** IDs of world book entries auto-generated from this character */
   entryIds?: string[];
 }
@@ -198,6 +202,8 @@ export interface WizardDraft {
   bookScanDepth: number;
   bookTokenBudget: number;
   bookRecursiveScanning: boolean;
+  /** Whether NSFW content generation is allowed for world book entries */
+  worldbookNsfw?: boolean;
   // Step 6: MVU & Beautification
   mvu: MvuConfig;
 }
@@ -343,6 +349,7 @@ export function createEmptyDraft(): WizardDraft {
     bookScanDepth: 200,
     bookTokenBudget: 500,
     bookRecursiveScanning: false,
+    worldbookNsfw: false,
 
     // Step 6: MVU & Beautification
     mvu: createEmptyMvuConfig(),
