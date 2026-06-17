@@ -1,6 +1,6 @@
 /**
- * AIGeneratePanel - Collapsible panel for AI batch world book generation.
- * Extracted from StepWorldBook for better component granularity.
+ * AIGeneratePanel - Always-visible panel for AI batch world book generation.
+ * Contains theme, skeleton mode, world rules, NSFW toggle, and generate button.
  */
 import { TextInput } from '../shared/TextInput';
 import { TextArea } from '../shared/TextArea';
@@ -17,7 +17,9 @@ interface AIGeneratePanelProps {
   onSkeletonModeChange: (skeleton: boolean) => void;
   onSkeletonCountChange: (count: number) => void;
   onGenerate: () => void;
-  onCancel: () => void;
+  /** Whether NSFW content generation is allowed */
+  nsfw?: boolean;
+  onNsfwChange?: (nsfw: boolean) => void;
 }
 
 export function AIGeneratePanel({
@@ -31,10 +33,30 @@ export function AIGeneratePanel({
   onSkeletonModeChange,
   onSkeletonCountChange,
   onGenerate,
-  onCancel,
+  nsfw,
+  onNsfwChange,
 }: AIGeneratePanelProps) {
   return (
     <div className="mb-6 rounded-xl border border-indigo-700/40 bg-indigo-950/30 p-4 space-y-3">
+      {/* NSFW toggle */}
+      <div className="flex items-center gap-3 pb-2 border-b border-indigo-700/30">
+        <label className="relative inline-flex items-center cursor-pointer">
+          <input
+            type="checkbox"
+            checked={nsfw ?? false}
+            onChange={(e) => onNsfwChange?.(e.target.checked)}
+            className="sr-only peer"
+          />
+          <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-rose-600" />
+        </label>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-slate-300">NSFW 内容</span>
+          <span className="text-[10px] text-slate-500">
+            {nsfw ? '允许生成成人内容' : '关闭（适配模型审核）'}
+          </span>
+        </div>
+      </div>
+
       <div>
         <label className="text-sm font-medium text-indigo-300">主题 / Theme</label>
         <TextInput
@@ -120,9 +142,6 @@ export function AIGeneratePanel({
         >
           {generating ? '⏳ 生成中...' : '🚀 生成世界书'}
         </button>
-        <Button variant="ghost" size="sm" onClick={onCancel}>
-          取消
-        </Button>
         {(topic || worldRules) && (
           <span className="text-[10px] text-slate-500 ml-auto">
             {topic && '主题: ' + topic.slice(0, 30) + (topic.length > 30 ? '...' : '')}

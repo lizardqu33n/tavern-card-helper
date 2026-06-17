@@ -536,7 +536,6 @@ ${e.content || ''}`)
             characterSummaries={characterSummaries}
             existingWorldbookContext={worldbookContext}
             onUpdate={(entries) => updateDraft({ lorebookEntries: entries })}
-            onNext={handleNext}
             nsfw={draft.worldbookNsfw}
             onNsfwChange={(nsfw) => updateDraft({ worldbookNsfw: nsfw })}
           />

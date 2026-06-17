@@ -23,8 +23,6 @@ import {
   TRANSLATE_CARD_PROMPT,
   CARD_DIAGNOSIS_PROMPT,
   MODIFY_CHARACTER_PROMPT,
-  WORLD_OVERVIEW_PROMPT,
-  WORLD_OVERVIEW_EXPAND_PROMPT,
   POLISH_SELECTION_PROMPT,
   parseAIJson,
 } from '../constants/prompts';
@@ -357,45 +355,6 @@ export function useAIGenerate() {
   }, []);
 
   /**
-   * Analyze world overview: AI analyzes character info + creator's overview,
-   * plans the world, and generates a concise overview + suggested entries.
-   */
-  const analyzeWorldOverview = useCallback(async (
-    cardName: string,
-    characterSummaries: string,
-    creatorOverview: string,
-  ) => {
-    const prompts = WORLD_OVERVIEW_PROMPT(cardName, characterSummaries, creatorOverview);
-    const text = await callAIWithPrompt(prompts.system, prompts.user, { temperature: 0.7, max_tokens: 4000, presetMode: 'none' });
-    const parsed = parseAIJson(text) as {
-      worldOverview?: string;
-      suggestedEntries?: Array<{
-        name: string;
-        type: string;
-        keys: string[];
-        summary: string;
-        priority: string;
-      }>;
-      worldDimensions?: string[];
-    } | null;
-    return parsed || { worldOverview: '', suggestedEntries: [], worldDimensions: [] };
-  }, []);
-
-  /**
-   * Expand the creator's world overview with more detail.
-   */
-  const expandWorldOverview = useCallback(async (
-    cardName: string,
-    characterSummaries: string,
-    currentOverview: string,
-    userRequirement?: string,
-    nsfw?: boolean,
-  ): Promise<string> => {
-    const prompts = WORLD_OVERVIEW_EXPAND_PROMPT(cardName, characterSummaries, currentOverview, userRequirement, nsfw);
-    return callAIWithPrompt(prompts.system, prompts.user, { temperature: 0.8, max_tokens: 4000, presetMode: 'force' });
-  }, []);
-
-  /**
    * Translate a character card's text fields between Chinese and English.
    * @param cardData - The card's data object containing text fields
    * @param targetLang - 'zh' for Chinese, 'en' for English
@@ -577,7 +536,5 @@ export function useAIGenerate() {
     generateCustomStatusBar,
     modifyCharacterDescription,
     polishSelection,
-    analyzeWorldOverview,
-    expandWorldOverview,
   };
 }
