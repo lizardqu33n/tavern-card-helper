@@ -136,16 +136,10 @@ export function useWizardState(editId?: number) {
     const safeUpdates = Object.fromEntries(
       Object.entries(updates).filter(([_, v]) => v !== undefined)
     );
-    console.log('[updateCharacter 诊断] 更新角色:', { index, keys: Object.keys(safeUpdates), descLen: (safeUpdates as Record<string, unknown>).description ? String((safeUpdates as Record<string, unknown>).description).length : undefined });
-    setDraft((prev) => {
-      const newChars = prev.characters.map((c, i) => (i === index ? { ...c, ...safeUpdates } : c));
-      console.log('[setDraft 诊断] characters 更新后:', {
-        index,
-        oldDescLen: prev.characters[index]?.description?.length ?? 0,
-        newDescLen: newChars[index]?.description?.length ?? 0,
-      });
-      return { ...prev, characters: newChars };
-    });
+    setDraft((prev) => ({
+      ...prev,
+      characters: prev.characters.map((c, i) => (i === index ? { ...c, ...safeUpdates } : c)),
+    }));
   }, []);
 
   /** Validate the current step */

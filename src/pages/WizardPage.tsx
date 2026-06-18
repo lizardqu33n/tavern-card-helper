@@ -6,6 +6,7 @@
  * their content is auto-injected as world book entries for efficient token usage.
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useWizardState } from '../hooks/useWizardState';
 import { useAIGenerate } from '../hooks/useAIGenerate';
@@ -226,11 +227,17 @@ export function WizardPage() {
 ${e.content || ''}`)
     .join('\n\n---\n\n');
 
+  // Keep a ref to draft so that injectCharacterEntries always reads the latest state
+  const draftRef = useRef(draft);
+  useEffect(() => { draftRef.current = draft; }, [draft]);
+
   /** Sync character data to world book entries and update draft */
   const getDraftWithCharacterEntries = useCallback(() => {
-    const { entries, characters } = syncCharacterEntries(draft.characters, draft.lorebookEntries);
-    return { ...draft, lorebookEntries: entries, characters };
-  }, [draft]);
+    // Read from ref to always get the latest draft (avoids stale closure issues)
+    const currentDraft = draftRef.current;
+    const { entries, characters } = syncCharacterEntries(currentDraft.characters, currentDraft.lorebookEntries);
+    return { ...currentDraft, lorebookEntries: entries, characters };
+  }, []); // No deps needed — always reads from ref
 
   const injectCharacterEntries = useCallback(() => {
     updateDraft(getDraftWithCharacterEntries());
@@ -296,14 +303,13 @@ ${e.content || ''}`)
         const newDesc = (parsed.description as string)?.trim();
         if (newDesc && newDesc.length > 20) {
           // Update character description (fills the text field; pre-generation content already saved to history above)
-          console.log('[生成诊断] updateCharacter 前:', { index, charId: char.id, newDescLen: newDesc.length, newDescPreview: newDesc.slice(0, 80) });
-          updateCharacter(index, { description: newDesc });
-          // Defer world book sync so React re-renders first and draft has the new description;
-          // calling synchronously would overwrite the new description with stale draft data
-          setTimeout(() => {
-            console.log('[生成诊断] setTimeout injectCharacterEntries 执行');
-            injectCharacterEntries();
-          }, 0);
+          // Use flushSync to ensure React processes the state update synchronously,
+          // so draftRef.current is updated before we call injectCharacterEntries
+          flushSync(() => {
+            updateCharacter(index, { description: newDesc });
+          });
+          // Now safe to sync world book entries — draftRef.current has the new description
+          injectCharacterEntries();
           addToast('success', `${char.name} 生成完成`);
         } else {
           console.warn(`[生成] ${char.name} AI 返回内容为空或过短:`, parsed.description);
